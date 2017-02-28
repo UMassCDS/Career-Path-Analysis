@@ -59,4 +59,4 @@ print_top_words(lda_model, tf_feature_names, n_words)
 
 # save model to pickle file
 print '...Saving model.\n'
-p.dump(open('../model/lda_' + str(n_topics) + '_topics', 'wb'))
+p.dump(lda_model, open('../models/lda_' + str(n_topics) + '_topics.p', 'wb'))
