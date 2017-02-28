@@ -1,36 +1,35 @@
 import xml.etree.ElementTree as ET
-from lxml import etree
 import pandas as pd
-import glob
 import os
+import cPickle as p
 
-def xmlToDataFrame():
-    listOfDirs=os.listdir("data")
-    #print listOfDirs
-    i=0
-    headers=[]
-    for filename in listOfDirs:
-        #fileName = filename.split('.')[0]+'.'+filename.split('.')[1]
-        print filename
-        if "xml" in filename:
-            tree = ET.parse('data/'+filename)
-            root = tree.getroot()
-            allRecords =[]
-            jobDesc = ''
-            jobTitle =''
-            allJobDesc = []
-            #allJobTitles = []
-            jobDescTitle = []
-            allDescTags = root.findall('.//Description')
-            allTitleTags = root.findall('.//Title')
-            for tagDesc in allDescTags:
-                if tagDesc.text is not None:
-                    allJobDesc.append(tagDesc.text)  
-            #for tagTitle in allTitleTags:
-             #   allJobTitles.append(tagTitle.text)
-    
-    return allJobDesc
 
-    #print allJobTitles    
-#print df.dtypes
-#print df.shape
+def xmlToDataset():
+	'''
+	Converts an XML resume file into a pandas DataFrame to use with scikit-learn's
+	LDA implementation.
+	'''
+	# get the names of all files in the data directory
+	listOfDirs = os.listdir('../data')
+	
+	# look through all files in the data directory
+	for filename in listOfDirs:
+		print '...Loading', filename
+		
+		# if the file is an XML file...
+		if 'xml' in filename:
+			# parse the XML tree
+			tree = ET.parse('../data/' + filename)
+			root = tree.getroot()
+			
+			# get all tags having to do with job descriptions
+			allDescTags = root.findall('.//Description')
+				
+			# collect the job description text from the XML
+			allJobDesc = []
+			for tagDesc in allDescTags:
+				if tagDesc.text is not None:
+					allJobDesc.append(tagDesc.text)  
+	
+	# pickle the job description text
+	p.dump(allJobDesc, open('../data/resume_data.p', 'wb'))
