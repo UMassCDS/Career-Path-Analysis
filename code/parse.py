@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import os
 import cPickle as p
-
+from nltk.corpus import stopwords
 
 def xmlToDataset():
 	'''
@@ -29,7 +29,8 @@ def xmlToDataset():
 			allJobDesc = []
 			for tagDesc in allDescTags:
 				if tagDesc.text is not None:
-					allJobDesc.append(tagDesc.text)  
+                                        filteredDesc = [word for word in tagDesc.text if word not in stopwords.words('english')]
+					allJobDesc.append(str(filteredDesc))  
 	
 	# pickle the job description text
 	p.dump(allJobDesc, open('../data/resume_data.p', 'wb'))
