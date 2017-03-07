@@ -14,8 +14,8 @@ def xmlToDataset():
 	stop = set(stopwords.words('english'))
 	
 	# look through all files in the data directory
-	for filename in listOfDirs:
-		print '...Loading', filename
+	for idx, filename in enumerate(listOfDirs):
+		print '...Loading', filename, '(',  str(idx), '/', str(len(listOfDirs)), ')' 
 		
 		# if the file is an XML file...
 		if 'xml' in filename:
@@ -30,7 +30,7 @@ def xmlToDataset():
 			allJobDesc = []
 			for tagDesc in allDescTags:
 				if tagDesc.text is not None:
-					filteredDesc = [word for word in tagDesc.text.split() if word not in stop ]
+					filteredDesc = [ word.lower() for word in tagDesc.text.split() if word.lower() not in stop ]
 					allJobDesc.append(str(filteredDesc))  
 	
 	# pickle the job description text
