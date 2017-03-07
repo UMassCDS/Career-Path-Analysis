@@ -15,7 +15,7 @@ def xmlToDataset():
 	
 	# look through all files in the data directory
 	for idx, filename in enumerate(listOfDirs):
-		print '...Loading', filename, '(',  str(idx), '/', str(len(listOfDirs)), ')' 
+		print '...Loading', filename, '(',  str(idx + 1), '/', str(len(listOfDirs)), ')' 
 		
 		# if the file is an XML file...
 		if 'xml' in filename:
