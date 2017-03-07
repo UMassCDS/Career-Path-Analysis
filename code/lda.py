@@ -7,7 +7,9 @@ Template for running LDA on job description corpus.
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 
-import parse, os, timeit
+from parse import xmlToDataset
+
+import os, timeit
 import cPickle as p
 import pandas as pd
 
@@ -29,7 +31,7 @@ n_topics = 200
 # Import data
 print '\n...Importing job description data.'
 if not 'resume_data.p' in os.listdir('../data/'):
-	parse.xmlToDataset()
+	xmlToDataset()
 	data = p.load(open('../data/resume_data.p', 'rb'))
 else:
 	data = p.load(open('../data/resume_data.p', 'rb'))

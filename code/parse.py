@@ -11,6 +11,7 @@ def xmlToDataset():
 	'''
 	# get the names of all files in the data directory
 	listOfDirs = os.listdir('../data')
+	stop = set(stopwords.words('english'))
 	
 	# look through all files in the data directory
 	for filename in listOfDirs:
@@ -29,8 +30,11 @@ def xmlToDataset():
 			allJobDesc = []
 			for tagDesc in allDescTags:
 				if tagDesc.text is not None:
-                                        filteredDesc = [word for word in tagDesc.text if word not in stopwords.words('english')]
+					filteredDesc = [word for word in tagDesc.text.split() if word not in stop ]
 					allJobDesc.append(str(filteredDesc))  
 	
 	# pickle the job description text
 	p.dump(allJobDesc, open('../data/resume_data.p', 'wb'))
+
+if __name__ == '__main__':
+	xmlToDataset()
