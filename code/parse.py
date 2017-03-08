@@ -1,8 +1,16 @@
+'''
+Parses XML dataset into a list of job descriptions.
+
+TODO: We need to parse corresponding job titles and perhaps supporting metadata from the resumes.
+'''
+
 import xml.etree.ElementTree as ET
 import pandas as pd
 import os
 import cPickle as p
+
 from nltk.corpus import stopwords
+
 
 def xmlToDataset():
 	'''
@@ -18,7 +26,7 @@ def xmlToDataset():
 		print '...Loading', filename, '(',  str(idx + 1), '/', str(len(listOfDirs)), ')' 
 		
 		# if the file is an XML file...
-		if 'xml' in filename:
+		if '.xml' in filename:
 			# parse the XML tree
 			tree = ET.parse('../data/' + filename)
 			root = tree.getroot()
