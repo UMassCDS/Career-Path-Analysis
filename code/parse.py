@@ -38,7 +38,7 @@ def xmlToDataset():
 			allJobDesc = []
 			for tagDesc in allDescTags:
 				if tagDesc.text is not None:
-					filteredDesc = [ word.lower() for word in tagDesc.text.split() if word.lower() not in stop ]
+					filteredDesc = [ word.lower() for word in tagDesc.text.split() if word.lower() not in stop and word.isalpha() ]
 					allJobDesc.append(str(filteredDesc))  
 	
 	# pickle the job description text
