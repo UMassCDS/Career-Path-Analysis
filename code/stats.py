@@ -4,7 +4,7 @@ Script for calculating resume dataset statistics. More calculations will be adde
 TODO: There are only first-order statistics about the number of job descriptions. We should add more statistics
 as discussed in our weekly meetings.
 '''
-
+import pandas as pd
 import xml.etree.ElementTree as ET
 import matplotlib.pyplot as plt
 import cPickle as p
@@ -116,26 +116,62 @@ def salaries_per_resume():
     # return the job description counts
     return salaries
 
+def getCurrenciesList():
+    '''
+    Returns the list of currencies in the dataset.
+    '''
+    #Currencies in resume
+    currencyList = []
+
+    # if we don't yet have the raw XML dataset stored on disk, get it
+    if not 'currencies.p' in os.listdir('../data/'):
+        directories = os.listdir('../data')
+
+        # look at all files in the directory 
+        for file_name in directories:
+            print '....Loading', file_name
+
+            if '.xml' in file_name:
+                tree = ET.parse('../data/' + file_name)
+                root = tree.getroot()
+                all_resume_tags = root.findall('.//resume')
+            
+                for resume_tag in all_resume_tags:
+                    for Tag in resume_tag.iter():
+                        if Tag.tag == 'CurrencyName':
+                            currencyList.append(Tag.text)
+                	#add the currencies from this resume to the currency list
+
+        # save it to disk for next time
+        p.dump(currencyList, open('../data/currencies.p', 'wb'))
+
+    # otherwise, we can simply load the XML dataset from disk
+    else:
+	    description_counts = p.load(open('../data/currencies.p', 'rb'))
+
+    # return the job description counts
+    return currencyList
+
 
 
 if __name__ == '__main__':
     # set threshold for 'jobs_greater_than_threshold' calculation in 'compute_statistics()'
     threshold = 1
-
-    # get job description counts per resume
-    #description_counts = jobs_per_resume()
+'''
+    get job description counts per resume
+    description_counts = jobs_per_resume()
     
-    #print max(description_counts), min(description_counts)
+    print max(description_counts), min(description_counts)
 
-    # plot a histogram of job description counts
-    #plot_jobs_per_resume(description_counts)
+    plot a histogram of job description counts
+    plot_jobs_per_resume(description_counts)
 
-    # calculate count statistics for job descriptions per resume
-    #stats = compute_statistics(description_counts, threshold)
+    calculate count statistics for job descriptions per resume
+    stats = compute_statistics(description_counts, threshold)
     
-    # print job description counts statistics
-    #print '\nMean number of resumes:', stats[0], '\nMedian number of resumes:', stats[1], '\nNumber of resumes with more than', \
-    #threshold, 'job:', stats[2], '\nNumber of resumes in corpus:', stats[3], '\n'
+     print job description counts statistics
+    print '\nMean number of resumes:', stats[0], '\nMedian number of resumes:', stats[1], '\nNumber of resumes with more than', \
+    threshold, 'job:', stats[2], '\nNumber of resumes in corpus:', stats[3], '\n'
     
     salaries = salaries_per_resume()
     print "Computing stats...."
@@ -144,5 +180,12 @@ if __name__ == '__main__':
     print '\nMean salary:', stats[0], '\nMedian salary:', stats[1]
     
     print "\nPlotting histogram..."
-    plot_histogram(salaries,"Salaries")
     
+    plot_histogram(salaries,"Salaries")
+    '''
+    currencyListSeries = pd.Series(getCurrenciesList())
+    print "Drawing histogram"
+    currencyListSeries.value_counts().plot(kind='bar')
+    plt.show()
+    plt.savefig('../models/currencyDistribution.png')
+
