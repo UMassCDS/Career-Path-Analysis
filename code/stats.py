@@ -147,7 +147,7 @@ def getCurrenciesList():
 
     # otherwise, we can simply load the XML dataset from disk
     else:
-	    description_counts = p.load(open('../data/currencies.p', 'rb'))
+	    currencyList = p.load(open('../data/currencies.p', 'rb'))
 
     # return the job description counts
     return currencyList
@@ -184,8 +184,9 @@ if __name__ == '__main__':
     plot_histogram(salaries,"Salaries")
     '''
     currencyListSeries = pd.Series(getCurrenciesList())
+    logCurrencySeries = pd.Series(np.log10(currencyListSeries.value_counts()))
     print "Drawing histogram"
-    currencyListSeries.value_counts().plot(kind='bar')
+    logCurrencySeries.plot(kind='bar',)
     plt.show()
-    plt.savefig('../plots/currencyDistribution.png')
+    plt.savefig('../plots/currencyDistributionLog.png')
 
