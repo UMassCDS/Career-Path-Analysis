@@ -47,12 +47,14 @@ def buildDataset():
                                         if memberTag.tag == 'Description':
 				            if memberTag.text is not None:
 					        filteredDesc = str([ word.lower() for word in memberTag.text.split() if word.lower() not in stop and word.isalpha() ])
+                                            else:
+                                                filteredDesc = "No description available"
                                         if memberTag.tag == 'StartYear':
                                             startYear = int(memberTag.text)
                                             jobYearTuple = (startYear,filteredDesc)
                                     jobTupleList.append(jobYearTuple)
                                 sortedByYearTuples = sorted(jobTupleList,key = itemgetter(0))
-                            allJobDesc.append(sortedByYearTuples)
+                                allJobDesc.append(sortedByYearTuples)
             
 					      
 	
