@@ -33,28 +33,43 @@ def buildDataset():
 			tree = ET.parse('../data/' + filename)
 			root = tree.getroot()
 			
-			# get all tags havLing to do with job descriptions
+			# Getting all resumes..."
 			allResumeTags = root.findall('.//resume')
 				
 			# collect sequences of job description text
 			allJobDesc = []
-                        for resumeTag in allResumeTags[0:2]:
+			
+			#For each resume in each file
+                        for resumeTag in allResumeTags:
                             expTagsInResume = resumeTag.findall('.//experiencerecord')
-                            if len(expTagsInResume)>=2:
+                            
+			    #If there are more than two transitions in that resume
+			    if len(expTagsInResume)>=2:
                                 jobTupleList = []
-                                for expTag in expTagsInResume:
+				startYear = 0
+				filteredDesc = None
+				sortedByYearTuples = []
+                                
+				#For each transition in that resume
+				for expTag in expTagsInResume:
                                     for memberTag in expTag.iter():
                                         if memberTag.tag == 'Description':
 				            if memberTag.text is not None:
 					        filteredDesc = str([ word.lower() for word in memberTag.text.split() if word.lower() not in stop and word.isalpha() ])
-                                            else:
-                                                filteredDesc = "No description available"
                                         if memberTag.tag == 'StartYear':
                                             startYear = int(memberTag.text)
-                                            jobYearTuple = (startYear,filteredDesc)
-                                    jobTupleList.append(jobYearTuple)
-                                sortedByYearTuples = sorted(jobTupleList,key = itemgetter(0))
-                                allJobDesc.append(sortedByYearTuples)
+                                    	
+					#Make a tuple of the start year and description
+					jobYearTuple = (startYear,filteredDesc)
+
+                                    #Append the tuple to list of transitions in that resume
+				    jobTupleList.append(jobYearTuple)
+
+                                    #Sort them by year to create the sequence
+				    sortedByYearTuples = sorted(jobTupleList,key = itemgetter(0))
+                                
+				#Append the sequence from that resume to the master list
+				allJobDesc.append(sortedByYearTuples)
             
 					      
 	
