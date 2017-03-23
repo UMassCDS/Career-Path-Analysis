@@ -157,7 +157,7 @@ def getCurrenciesList():
 if __name__ == '__main__':
     # set threshold for 'jobs_greater_than_threshold' calculation in 'compute_statistics()'
     threshold = 1
-'''
+    '''
     get job description counts per resume
     description_counts = jobs_per_resume()
     
@@ -187,5 +187,5 @@ if __name__ == '__main__':
     print "Drawing histogram"
     currencyListSeries.value_counts().plot(kind='bar')
     plt.show()
-    plt.savefig('../models/currencyDistribution.png')
+    plt.savefig('../plots/currencyDistribution.png')
 
