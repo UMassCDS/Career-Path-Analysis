@@ -48,7 +48,7 @@ def lda(n_words=15, n_topics=200):
     # Use tf (raw term count) features for LDA.
     print '...Extracting term frequency (bag of words) features for LDA.'
     tf_vectorizer = CountVectorizer()
-    tf = tf_vectorizer.fit_transform(data)
+    tf = tf_vectorizer.fit_transform([[job_description for job_description in datum[1]] for datum in data])
 
     # Build LDA model. Mimno paper uses 200 topics; otherwise, I'll keep the default scikit-learn model parameters.
     # We can play with model parameters in order to investigate how they affect results
@@ -59,7 +59,9 @@ def lda(n_words=15, n_topics=200):
 
     # Fit model to data
     print '...Fitting LDA model to job description text.\n'
-    lda_model.fit(tf)
+    fitted_data = lda_model.fit_transform(tf)
+
+    print fitted_data
 
     print '\nCompleted fitting LDA model to job description text in ' + str(timeit.default_timer() - start_time) + ' seconds.\n'
 
