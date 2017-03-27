@@ -1,7 +1,7 @@
 import sys
 import collections
 import xml.etree.ElementTree as ET
-import seaborn as sns
+# import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -46,38 +46,77 @@ def counter_resize(cnt, n, other_name):
     return tops
 
 
-def add_margin(ax, x=0.05, y=0.05):
-    # This will, by default, add 5% to the x and y margins. You
-    # can customise this using the x and y arguments when you call it.
-    xlim = ax.get_xlim()
-    ylim = ax.get_ylim()
-    xmargin = (xlim[1]-xlim[0])*x
-    ymargin = (ylim[1]-ylim[0])*y
-    ax.set_xlim(xlim[0]-xmargin,xlim[1]+xmargin)
-    ax.set_ylim(ylim[0]-ymargin,ylim[1]+ymargin)
+# def add_margin(ax, x=0.05, y=0.05):
+#     # This will, by default, add 5% to the x and y margins. You
+#     # can customise this using the x and y arguments when you call it.
+#     xlim = ax.get_xlim()
+#     ylim = ax.get_ylim()
+#     xmargin = (xlim[1]-xlim[0])*x
+#     ymargin = (ylim[1]-ylim[0])*y
+#     ax.set_xlim(xlim[0]-xmargin,xlim[1]+xmargin)
+#     ax.set_ylim(ylim[0]-ymargin,ylim[1]+ymargin)
+
+class ExceptStupid(Exception):
+    pass
 
 
-def plot_bars(df, colx, coly):
-    sns.set(style="whitegrid")
+# def plot_histogram(count_array, feature):
+#     '''
+#     Plot a histogram of the number of the feature per resume.
+#     '''
+#     plt.figure(figsize=(16, 9))
+#     plt.hist(count_array, bins=range(max(count_array) + 1), rwidth=0.9)
+#     plt.title('Histogram of ' + feature + ' per Resume')
+#     plt.xlabel(feature + ' value')
+#     plt.ylabel('Number of resumes')
+#     plt.xticks(np.arange(0, max(count_array) + 1))
+#
+#     plt.savefig('../plots/%s_per_resume_histogram.png', feature)
 
-    # Initialize the matplotlib figure
-    # f, ax = plt.subplots(figsize=(6, 6))
 
-    sns.set_color_codes("pastel")
-    sns.barplot(x=colx, y=coly, data=df, label="zzz", color="b")
+pd.options.display.mpl_style = 'default'
 
-    # Add a legend and informative axis label
-    # ax.legend(ncol=2, loc="lower right", frameon=True)
-    # ax.set(xlim=(0, 24), ylabel="",
-    #        xlabel="Automobile collisions per billion miles")
+def plot_bars(attr_name, df, idx):
+    # sns.set(style="whitegrid")
+    # sns.set_color_codes("pastel")
 
-    # ax.set(xlabel=colx, ylabel=coly)
+    # plt.tight_layout()
+    ax = plt.subplot(ROWS_PER_FIG, COLS_PER_FIG, idx)
+    # plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=None)
+    # left = 0.125  # the left side of the subplots of the figure
+    # right = 0.9  # the right side of the subplots of the figure
+    # bottom = 0.1  # the bottom of the subplots of the figure
+    # top = 0.9  # the top of the subplots of the figure
+    # wspace = 0.2  # the amount of width reserved for blank space between subplots
+    # hspace = 0.2  # the amount of height reserved for white space between subplots
+    plt.subplots_adjust(left=0.2, right=0.8, hspace=1.0, wspace=1.0)
 
-    # sns.despine(left=True, bottom=True)
-    plt.savefig("bars_{}.png".format(coly))
+    # ax.bar(edgecolor=None)
+
+    try:
+        # ax = sns.barplot(x="count", y=attr_name, data=df, label="zzz", color="b")
+
+        ax = df.plot(y="count", x=attr_name, kind='barh', ax=ax, legend=False)
+
+        sys.stderr.write("\tplotted {}\n".format(attr_name))
+    except ExceptStupid:
+        sys.stderr.write("\tunable to plot {}\n".format(attr_name))
+        return
+
+    # add_margin(ax, x=0.1, y=0.1)
+    ax.set_title(attr_name)
+    ax.set(xlabel="", ylabel="")
+
+
+def save_plots(elt, index):
+    plt.savefig("{}_attrs_{}.png".format(elt.replace('/', '-'), index))
+
 
 #############################
 if __name__ == '__main__':
+
+    ROWS_PER_FIG = 3
+    COLS_PER_FIG = 1
 
     infile_name = sys.argv[1]
     target_elt = sys.argv[2]
@@ -86,83 +125,28 @@ if __name__ == '__main__':
     tree = ET.parse(infile_name)
     root = tree.getroot()
 
-    sys.stderr.write("creating attr hists\n")
+    sys.stderr.write("creating attr hists\n\n")
     attrs = get_attr_hists(root, target_elt)
 
-    sns.set(style="whitegrid")
-    sns.set_color_codes("pastel")
-    # f, axs = plt.subplots(nrows=20, ncols=2)
-
-    f = plt.figure(figsize=(8, 10))
+    fig = plt.figure(figsize=(8, 10))
 
     for i, (attr_name, attr_counter) in enumerate(attrs.items()):
-        sys.stderr.write("plotting hist for {}\n".format(attr_name))
+        sys.stderr.write("{}.{}\n".format(target_elt, attr_name))
 
-        try:
-            for v, c in sorted(attr_counter.items()):
-                sys.stderr.write("\t{}:\t{}\n".format(v, c))
-        except Exception:
-            pass
-
-        # df = pd.DataFrame.from_dict(attr_counter_top10, orient='columns', dtype=None)
-        # print df
-        # df.columns = ["count"]
-        # df.index.names = [attr_name]
-        # df.columns = [attr_name, "count"]
-        # print df
+        idx = (i % (ROWS_PER_FIG * COLS_PER_FIG)) + 1
+        sys.stderr.write("\tplotting hist for {} (i={}, idx={})\n".format(attr_name, i, idx))
 
         df = pd.DataFrame(sorted(attr_counter.items()))
-        print df
-
         df.columns = [attr_name, "count"]
         print df
 
-        # plot_bars(df, "count", attr_name)
+        plot_bars(attr_name, df, idx)
 
-        # 0     1
-        # 1     2
-        # 3     3
-        # 4     1
-        # 5     2
-        # 6     3
-        rows = 3
-        cols = 1
-        idx = (i % (rows*cols)) + 1
+        if idx == ROWS_PER_FIG*COLS_PER_FIG:
+            save_plots(target_elt, i)
+            fig = plt.figure(figsize=(8, 10))
 
-        # plots_per_page = rows*cols
-        # j = i + 1
-        # idx = (rows*cols % j) + 1
-        sys.stderr.write("*** plot {}, index {}\n".format(i, idx))
-
-        if (idx == 1) and (i > 0):
-            plt.savefig("{}_attrs_{}.png".format(target_elt.replace('/', '-'), i - 1))
-            sys.stderr.write("*** new fig\n")
-            f = plt.figure(figsize=(8, 10))
-
-
-
-        # ax = f.add_subplot(rows, cols, idx)
-
-        s = plt.subplot(rows, cols, idx)
-
-        try:
-            ax = sns.barplot(x="count", y=attr_name, data=df, label="zzz", color="b")
-        except Exception:
-            continue
-
-        add_margin(ax, x=0.1, y=0.1)
-
-
-        ax.set_title(attr_name)
-        ax.set(xlabel="", ylabel="")
-        # axs[i].set(xlabel="count", ylabel=attr_name)
-        # axs[i].set_title("hell")
-
-
-        # sns.despine(left=True, bottom=True)
-        # plt.savefig("bars_{}_{}.png".format(i, attr_name))
-
-    plt.savefig("{}_attrs_{}.png".format(target_elt.replace('/', '-'), i - 1))
-
+        sys.stderr.write("\n\n")
+    save_plots(target_elt, len(attrs))
 
 
