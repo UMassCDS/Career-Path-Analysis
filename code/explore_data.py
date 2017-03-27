@@ -12,8 +12,14 @@ def get_attr_hists(root, target_elt, topn=10, name_other="* other *", name_missi
     elts = root.findall(target_elt)
     for elt in elts:
         for attr_elt in elt:
-            attr_name = attr_elt.tag
-            attr_val = attr_elt.text
+            child_count = len(attr_elt)
+            if child_count > 0:
+                attr_name = attr_elt[0].tag + "_count"
+                attr_val = child_count
+            else:
+                attr_name = attr_elt.tag
+                attr_val = attr_elt.text
+
             if attr_name not in attr_hists:
                 attr_hists[attr_name] = collections.Counter()
             attr_hists[attr_name][attr_val] += 1
@@ -38,6 +44,17 @@ def counter_resize(cnt, n, other_name):
     if size_other:
         tops[other_name] = size_other
     return tops
+
+
+def add_margin(ax, x=0.05, y=0.05):
+    # This will, by default, add 5% to the x and y margins. You
+    # can customise this using the x and y arguments when you call it.
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    xmargin = (xlim[1]-xlim[0])*x
+    ymargin = (ylim[1]-ylim[0])*y
+    ax.set_xlim(xlim[0]-xmargin,xlim[1]+xmargin)
+    ax.set_ylim(ylim[0]-ymargin,ylim[1]+ymargin)
 
 
 def plot_bars(df, colx, coly):
@@ -76,13 +93,16 @@ if __name__ == '__main__':
     sns.set_color_codes("pastel")
     # f, axs = plt.subplots(nrows=20, ncols=2)
 
-    f = plt.figure()
+    f = plt.figure(figsize=(8, 10))
 
     for i, (attr_name, attr_counter) in enumerate(attrs.items()):
         sys.stderr.write("plotting hist for {}\n".format(attr_name))
 
-        for v, c in sorted(attr_counter.items()):
-            sys.stderr.write("\t{}:\t{}\n".format(v, c))
+        try:
+            for v, c in sorted(attr_counter.items()):
+                sys.stderr.write("\t{}:\t{}\n".format(v, c))
+        except Exception:
+            pass
 
         # df = pd.DataFrame.from_dict(attr_counter_top10, orient='columns', dtype=None)
         # print df
@@ -99,15 +119,50 @@ if __name__ == '__main__':
 
         # plot_bars(df, "count", attr_name)
 
-        ax = f.add_subplot(int("92" + str(i)))
+        # 0     1
+        # 1     2
+        # 3     3
+        # 4     1
+        # 5     2
+        # 6     3
+        rows = 3
+        cols = 1
+        idx = (i % (rows*cols)) + 1
 
-        sns.barplot(x="count", y=attr_name, data=df, label="zzz", color="b", ax=ax)
+        # plots_per_page = rows*cols
+        # j = i + 1
+        # idx = (rows*cols % j) + 1
+        sys.stderr.write("*** plot {}, index {}\n".format(i, idx))
+
+        if (idx == 1) and (i > 0):
+            plt.savefig("{}_attrs_{}.png".format(target_elt.replace('/', '-'), i - 1))
+            sys.stderr.write("*** new fig\n")
+            f = plt.figure(figsize=(8, 10))
+
+
+
+        # ax = f.add_subplot(rows, cols, idx)
+
+        s = plt.subplot(rows, cols, idx)
+
+        try:
+            ax = sns.barplot(x="count", y=attr_name, data=df, label="zzz", color="b")
+        except Exception:
+            continue
+
+        add_margin(ax, x=0.1, y=0.1)
+
+
+        ax.set_title(attr_name)
+        ax.set(xlabel="", ylabel="")
         # axs[i].set(xlabel="count", ylabel=attr_name)
         # axs[i].set_title("hell")
 
-        # sns.despine(left=True, bottom=True)
-        plt.savefig("bars_{}_{}.png".format(i, attr_name))
 
+        # sns.despine(left=True, bottom=True)
+        # plt.savefig("bars_{}_{}.png".format(i, attr_name))
+
+    plt.savefig("{}_attrs_{}.png".format(target_elt.replace('/', '-'), i - 1))
 
 
 
