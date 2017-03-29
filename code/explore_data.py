@@ -6,7 +6,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def get_attr_hists(root, target_elt, topn=10, name_other="* other *", name_missing="* missing *"):
+LABEL_OTHER = "* other *"
+LABEL_MISSING = "* missing *"
+
+
+def get_attr_hists(root, target_elt, topn=10, name_other=LABEL_OTHER, name_missing=LABEL_MISSING):
     attr_hists = {}  # attr_name -> value counter
 
     elts = root.findall(target_elt)
@@ -14,7 +18,7 @@ def get_attr_hists(root, target_elt, topn=10, name_other="* other *", name_missi
         for attr_elt in elt:
             child_count = len(attr_elt)
             if child_count > 0:
-                attr_name = attr_elt[0].tag + "_count"
+                attr_name = attr_elt.tag + "." + attr_elt[0].tag + "_count"
                 attr_val = child_count
             else:
                 attr_name = attr_elt.tag
@@ -46,35 +50,13 @@ def counter_resize(cnt, n, other_name):
     return tops
 
 
-# def add_margin(ax, x=0.05, y=0.05):
-#     # This will, by default, add 5% to the x and y margins. You
-#     # can customise this using the x and y arguments when you call it.
-#     xlim = ax.get_xlim()
-#     ylim = ax.get_ylim()
-#     xmargin = (xlim[1]-xlim[0])*x
-#     ymargin = (ylim[1]-ylim[0])*y
-#     ax.set_xlim(xlim[0]-xmargin,xlim[1]+xmargin)
-#     ax.set_ylim(ylim[0]-ymargin,ylim[1]+ymargin)
-
-class ExceptStupid(Exception):
-    pass
-
-
-# def plot_histogram(count_array, feature):
-#     '''
-#     Plot a histogram of the number of the feature per resume.
-#     '''
-#     plt.figure(figsize=(16, 9))
-#     plt.hist(count_array, bins=range(max(count_array) + 1), rwidth=0.9)
-#     plt.title('Histogram of ' + feature + ' per Resume')
-#     plt.xlabel(feature + ' value')
-#     plt.ylabel('Number of resumes')
-#     plt.xticks(np.arange(0, max(count_array) + 1))
-#
-#     plt.savefig('../plots/%s_per_resume_histogram.png', feature)
-
-
-pd.options.display.mpl_style = 'default'
+# pd.options.display.mpl_style = 'default'
+# plt.style.use("ggplot")
+# plt.
+import matplotlib
+# matplotlib.style.use('ggplot')
+# matplotlib.pyplot.use('ggplot')
+matplotlib.pyplot.style.use('ggplot')
 
 def plot_bars(attr_name, df, idx):
     # sns.set(style="whitegrid")
@@ -91,21 +73,56 @@ def plot_bars(attr_name, df, idx):
     # hspace = 0.2  # the amount of height reserved for white space between subplots
     plt.subplots_adjust(left=0.2, right=0.8, hspace=1.0, wspace=1.0)
 
-    # ax.bar(edgecolor=None)
 
-    try:
-        # ax = sns.barplot(x="count", y=attr_name, data=df, label="zzz", color="b")
+    xlim = None
+    # df.sort_values("count", inplace=True)
+    # if df.iloc[-1][attr_name] == LABEL_OTHER:
+    #     xlim = (0, 1.05*df.iloc[-2]["count"])
 
-        ax = df.plot(y="count", x=attr_name, kind='barh', ax=ax, legend=False)
+    val_other = df.get_value(LABEL_OTHER, "count") if (LABEL_OTHER in df.index) else 0
+    val_missing = df.get_value(LABEL_MISSING, "count") if (LABEL_MISSING in df.index) else 0
 
-        sys.stderr.write("\tplotted {}\n".format(attr_name))
-    except ExceptStupid:
-        sys.stderr.write("\tunable to plot {}\n".format(attr_name))
-        return
 
-    # add_margin(ax, x=0.1, y=0.1)
+    # val_other = df[]
+    # val_other = df.loc[df[attr_name] == LABEL_OTHER, "count"]
+    # val_other = df.get_value(LABEL_OTHER, "count")
+    # val_missing = df.loc[df[attr_name] == LABEL_MISSING]["count"][0]
+    print "\n\n***other: {}, missing: {}***".format(val_other, val_missing)
+
+    # df_data = df[(df["value"] != LABEL_OTHER) & (df["value"] != LABEL_MISSING)]
+    df_data = df.loc[(df.index != LABEL_MISSING) & (df.index != LABEL_OTHER)]
+    print df_data
+
+
+    df_data.sort_values("count", inplace=True)
+    val_top = df_data.iloc[-1]["count"]
+    print "\n\n***top: {}***".format(val_top)
+
+    if (val_missing > 2*val_top) or (val_other > 2*val_top):
+        xlim = (0, 1.05*val_top)
+        print "\n\n***xlim: {}***".format(xlim)
+
+
+    # print "second last one: ", df.iloc(-2)
+    # print "last one: ", df.iloc(-1)
+
+    ax = df.plot(y="count", x=None, kind='barh', ax=ax, legend=False, xlim=xlim)
     ax.set_title(attr_name)
     ax.set(xlabel="", ylabel="")
+
+    for rect, val in zip(ax.patches, df["count"]):
+        # h = rect.get_height()
+        # ax.text(rect.get_x() + rect.get_width()/2, h + 5, "stupid", ha='center', va='bottom')
+        h = rect.get_height()
+        w = rect.get_width()
+        sty = 'normal'
+
+        x = rect.get_x() + w
+        if (xlim is not None) and (val > xlim[1]):
+            # val = "! " + str(val)
+            x = xlim[1]
+            sty = 'italic'
+        ax.text(x, rect.get_y() + h/2, val, ha='left', va='center', size='x-small', style=sty)
 
 
 def save_plots(elt, index):
@@ -130,23 +147,24 @@ if __name__ == '__main__':
 
     fig = plt.figure(figsize=(8, 10))
 
-    for i, (attr_name, attr_counter) in enumerate(attrs.items()):
+    for i, (attr_name, attr_counter) in enumerate(sorted(attrs.items())):
         sys.stderr.write("{}.{}\n".format(target_elt, attr_name))
 
         idx = (i % (ROWS_PER_FIG * COLS_PER_FIG)) + 1
         sys.stderr.write("\tplotting hist for {} (i={}, idx={})\n".format(attr_name, i, idx))
 
-        df = pd.DataFrame(sorted(attr_counter.items()))
-        df.columns = [attr_name, "count"]
+        # df = pd.DataFrame(sorted(attr_counter.items()))
+        # df.columns = ["value", "count"]
+        df = pd.DataFrame.from_records(sorted(attr_counter.items()), index="value", columns=["value", "count"])
         print df
 
         plot_bars(attr_name, df, idx)
 
-        if idx == ROWS_PER_FIG*COLS_PER_FIG:
+        if (idx == ROWS_PER_FIG*COLS_PER_FIG) or (i == (len(attrs)-1)):
             save_plots(target_elt, i)
             fig = plt.figure(figsize=(8, 10))
 
         sys.stderr.write("\n\n")
-    save_plots(target_elt, len(attrs))
+    # save_plots(target_elt, len(attrs))
 
 
