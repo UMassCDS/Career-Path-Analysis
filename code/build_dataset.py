@@ -52,7 +52,7 @@ def build_dataset():
 						for member_tag in exp_tag.iter():
 							if member_tag.tag == 'Description':
 								if member_tag.text is not None:
-									filtered_desc = str([ word.lower() for word in member_tag.text.split() if word.lower() not in stop and word.isalpha() ])
+									filtered_desc = [ str(word.lower()) for word in member_tag.text.split() if word.lower() not in stop and word.isalpha() ]
 							if member_tag.tag == 'StartYear':
 								start_year = int(member_tag.text)
 
@@ -66,7 +66,13 @@ def build_dataset():
 						sorted_by_year_tuples = sorted(job_tuple_list, key=itemgetter(0))
 
 					# Append the sequence from that resume to the master list
-					all_job_desc.append([ job[1] for job in sorted_by_year_tuples ])
+					if len(sorted_by_year_tuples) >= 2:
+						to_append = []
+						for job in sorted_by_year_tuples:
+							if job[1] != None:
+								to_append.append(job[1])
+						if len(to_append) >= 2:
+							all_job_desc.append(to_append)
 		
 		print '...we\'ve parsed', len(all_job_desc), 'job descriptions so far'
 		
