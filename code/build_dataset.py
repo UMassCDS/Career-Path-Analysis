@@ -52,7 +52,7 @@ def build_dataset():
 						for member_tag in exp_tag.iter():
 							if member_tag.tag == 'Description':
 								if member_tag.text is not None:
-									filtered_desc = [ str(word.lower()) for word in member_tag.text.split() if word.lower() not in stop and word.isalpha() ]
+									filtered_desc = [ word.lower() for word in member_tag.text.split() if word.lower() not in stop and word.isalpha() ]
 							if member_tag.tag == 'StartYear':
 								start_year = int(member_tag.text)
 
