@@ -2,3 +2,5 @@
 *.p
 *.pyc
 DS_Store
+*.stats*
+*.buildDataset*
