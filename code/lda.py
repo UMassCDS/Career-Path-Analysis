@@ -63,6 +63,7 @@ def lda(n_words=15, n_topics=100):
             job_sequence_counts.append(job_count)
 
     # print out some useful information
+    print '\n'
     print 'number of job descriptions:', total_job_count
     print 'number of job description sequences:', len(job_sequence_counts)
     print '\n'
