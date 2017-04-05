@@ -49,22 +49,22 @@ def lda(n_words=15, n_topics=100):
     else:
     	sequence_data = p.load(open('../data/resume_data.p', 'rb'))
 
+    # parse data into LDA-usable format
     data = []
     job_sequence_counts = []
-    total_job_count, none_count = 0, 0
+    total_job_count = 0
     for datum_idx, datum in enumerate(sequence_data):
         job_count = 0
         for job_descr_indx, job_description in enumerate(datum):
-            try:
-                data.append(' '.join(job_description))
-                job_count += 1
-                total_job_count += 1
-            except TypeError:
-                none_count += 1
+            data.append(' '.join(job_description))
+            job_count += 1
+            total_job_count += 1
         if job_count != 0:
             job_sequence_counts.append(job_count)
 
+    # print out some useful information
     print 'number of job descriptions:', total_job_count
+    print 'number of job description sequences:', len(job_sequence_counts)
     print 'number of NoneType entries:', none_count
 
     # Use tf (raw term count) features for LDA.
