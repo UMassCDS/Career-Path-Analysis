@@ -7,7 +7,7 @@ Template for running LDA on job description corpus.
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 
-from parse import xmlToDataset
+from build_dataset import build_dataset
 
 import matplotlib.pyplot as plt
 import os, timeit
@@ -44,7 +44,7 @@ def lda(n_words=15, n_topics=100):
     # Import data
     print '\n...Importing job description data.'
     if not 'resume_data.p' in os.listdir('../data/'):
-    	xmlToDataset()
+    	build_dataset()
     	sequence_data = p.load(open('../data/resume_data.p', 'rb'))
     else:
     	sequence_data = p.load(open('../data/resume_data.p', 'rb'))
@@ -56,7 +56,7 @@ def lda(n_words=15, n_topics=100):
         job_count = 0
         for job_descr_indx, job_description in enumerate(datum):
             try:
-                data.append(' '.join(job_description[1]))
+                data.append(' '.join(job_description))
                 job_count += 1
                 total_job_count += 1
             except TypeError:
