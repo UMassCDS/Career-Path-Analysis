@@ -65,7 +65,7 @@ def lda(n_words=15, n_topics=100):
     # print out some useful information
     print 'number of job descriptions:', total_job_count
     print 'number of job description sequences:', len(job_sequence_counts)
-    print 'number of NoneType entries:', none_count
+    print '\n'
 
     # Use tf (raw term count) features for LDA.
     print '...Extracting term frequency (bag of words) features for LDA.'
