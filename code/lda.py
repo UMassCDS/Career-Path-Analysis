@@ -79,7 +79,7 @@ def lda(n_words=15, n_topics=100):
     # Build LDA model. Mimno paper uses 200 topics; otherwise, I'll keep the default scikit-learn model parameters.
     # We can play with model parameters in order to investigate how they affect results
     print '...Building LDA model.'
-    lda_model = LatentDirichletAllocation(n_topics=n_topics, learning_method='batch', evaluate_every=10, n_jobs=-1, verbose=10)
+    lda_model = LatentDirichletAllocation(n_topics=n_topics, learning_method='batch', evaluate_every=10, n_jobs=16, verbose=10)
 
     start_time = timeit.default_timer()
 
@@ -108,7 +108,7 @@ def lda(n_words=15, n_topics=100):
     print len([ job for datum in fitted_sequential_data for job in datum ])
     p.dump([ [ fitted_data[idx] for idx in xrange(job_count) ] for job_count in job_sequence_counts ], open('../data/fitted_sequential_data_' + str(n_topics) + '.p', 'wb'))
 
-
+	
     for idx in xrange(5):
         # print out example output from LDA
         print data[idx]
