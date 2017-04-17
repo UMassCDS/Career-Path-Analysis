@@ -24,12 +24,12 @@ def transformInput():
         listOfSequences = []
 	lengthsOfSequences = []
         print "Transforming data..."
-        for sequence in hmmInput:
+        for sequence in hmmInput[:100]:
             for description in sequence:
 		listOfSequences.append(description.tolist())
 	    lengthsOfSequences.append(len(sequence))
-	    p.dump(listOfSequences,open('../data/listOfSequences.p','wb'))
-	    p.dump(lengthsOfSequences,open('../data/lengthsOfSequences.p','wb'))
+	p.dump(listOfSequences,open('../data/listOfSequences.p','wb'))
+	p.dump(lengthsOfSequences,open('../data/lengthsOfSequences.p','wb'))
     else:
         listOfSequences = p.load(open('../data/listOfSequences.p','rb'))
         lengthsOfSequences = p.load(open('../data/lengthsOfSequences.p','rb'))
@@ -51,7 +51,7 @@ def predictNextTransition(listOfSequences,lengthsOfSequences,hmmInput):
     Not yet finalized
     '''
     #Learn a HMM from the sequences
-    model = hmm.GaussianHMM(n_components = 10,n_iter = 100)
+    model = hmm.MultinomialHMM(n_components = 10,n_iter = 100)
     model.fit(listOfSequences,lengthsOfSequences)
     
     #Determine sequences of hidden states that led to a particular sequence
