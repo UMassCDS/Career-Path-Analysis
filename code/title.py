@@ -11,7 +11,8 @@ import cPickle as p
 
 from operator import itemgetter
 from xml.etree import ElementTree
-from joblib import Parallel, delayed	
+from joblib import Parallel, delayed
+from multiprocessing import cpu_count
 from hmmlearn.hmm import MultinomialHMM
 
 
@@ -83,7 +84,7 @@ def get_title_sequence_data():
 	# get a list of the files we are looking to parse for title sequences
 	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ]
 
-	title_sequences = Parallel(8)((delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files)))
+	title_sequences = Parallel(cpu_count())((delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files)))
 
 	return title_sequences
 
@@ -110,7 +111,7 @@ if __name__ == '__main__':
 	else:
 		data = p.load(open('../data/sequential_title_data.p', 'rb'))
 
-	print data
+	data = [ datum for l in data for datum in l ]
 
 	print '\nNumber of distinct job titles (after lowercasing and removing non-letter characters:', len(set([ datum for l in data for datum in l ]))
 
