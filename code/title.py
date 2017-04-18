@@ -4,7 +4,7 @@ Replicating the TITLE model from "Modeling Career Path Trajectories" (Mimno & Mc
 @author: Dan Saunders (djsaunde.github.io)
 '''
 
-import os, re, argparse
+import os, re, sys, argparse
 
 import numpy as np
 import cPickle as p
@@ -26,7 +26,7 @@ def get_single_file_data(file, file_index, num_files):
 	title_sequences = []
 
 	# for removing non-letter characters
-	regex = re.compile('[^a-zA-Z]')
+	regex = re.compile( "[A-Z ]{6,}[A-Z ]{6,}")
 
 	# parse the XML tree
 	tree = ElementTree.parse('../data/' + file)
@@ -111,7 +111,7 @@ if __name__ == '__main__':
 	else:
 		data = p.load(open('../data/sequential_title_data.p', 'rb'))
 
-	data = [ datum for l in data for datum in l ]
+	data = [ datum for l in data for datum in l ][:5000]
 
 	print '\nNumber of distinct job titles (after lowercasing and removing non-letter characters:', len(set([ datum for l in data for datum in l ]))
 
@@ -126,7 +126,8 @@ if __name__ == '__main__':
 		id_mapping[title] = current_id
 		current_id += 1
 
-	data = np.concatenate([ np.array([ id_mapping[datum] for datum in l ]) for l in data ])
+	lengths = [ len(datum) for datum in data ]
+	data = np.concatenate([ np.array([ id_mapping[datum] for datum in l ]) for l in data ]).reshape((-1, 1))
 
 	print '\nThere are', data.shape[0], 'job title sequence examples.'
 
@@ -134,4 +135,4 @@ if __name__ == '__main__':
 
 	# build and fit the hidden Markov model
 	model = MultinomialHMM(n_components=n_components, n_iter=n_iter, verbose=True)
-	model.fit(data.reshape((-1, 1)))
+	model.fit(data, lengths)
