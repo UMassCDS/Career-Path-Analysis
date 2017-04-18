@@ -1,11 +1,7 @@
-import pandas as pd
 import xml.etree.ElementTree as ET
-import matplotlib.pyplot as plt
-import cPickle as pickle
-import numpy as np
 import cPickle as p
-import os
 import operator
+import os
 
 all_job_transitions = dict()
 
@@ -99,16 +95,16 @@ if __name__ == "__main__":
                 tree = ET.parse(resume_data_directory + file_name)
                 root = tree.getroot()
                 all_resume_tags = root.findall('.//resume')
-
+    
                 create_transitions(all_resume_tags)
             
                 p.dump(all_job_transitions, open(job_transitions_data_filepath + job_transitions_data, 'wb'))
     
     else:
         all_job_transitions = p.load(open(job_transitions_data_filepath + job_transitions_data, 'rb'))
-        
+            
     
     #predict_for_all_job_titles() 
         
     
-    #predict_next_job_title("CEO")
+    predict_next_job_title("President")
