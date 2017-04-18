@@ -104,10 +104,10 @@ if __name__ == '__main__':
 
 	print '\nNumber of distinct job titles (after lowercasing and removing non-letter characters:', len(set([ datum for l in data for datum in l ]))
 
-	for idx, title in enumerate(set([ datum for l in data for datum in l ])):
-		print idx	
-		if ([ datum for l in data for datum in l ]).count(title) < 10:
-			data = [ 'X' if datum == title else datum for l in data for datum in l ]
+	# for idx, title in enumerate(set([ datum for l in data for datum in l ])):
+	# 	print idx	
+	# 	if ([ datum for l in data for datum in l ]).count(title) < 10:
+	# 		data = [ 'X' if datum == title else datum for l in data for datum in l ]
 
 	id_mapping = {}
 	current_id = 0
