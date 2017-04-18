@@ -2,12 +2,12 @@
 #
 #SBATCH --partition=longq
 #SBATCH --time=01-00:00:00
-#SBATCH --mem=40000
+#SBATCH --mem=80000
 #SBATCH --account=mccallum
 
-n_components=10
-n_iters=10000
+n_components=100
+n_iter=10000
 
-python title.py --n_components=$n_components --n_iters=$n_iters
+python title.py --n_components=$n_components --n_iter=$n_iter
 exit
 
