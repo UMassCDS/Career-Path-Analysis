@@ -4,7 +4,7 @@ Replicating the TITLE model from "Modeling Career Path Trajectories" (Mimno & Mc
 @author: Dan Saunders (djsaunde.github.io)
 '''
 
-import os, re, sys, argparse
+import os, re, sys, argparse, multiprocess
 
 import numpy as np
 import cPickle as p
@@ -26,7 +26,7 @@ def get_single_file_data(file, file_index, num_files):
 	title_sequences = []
 
 	# for removing non-letter characters
-	regex = re.compile( "[A-Z ]{6,}[A-Z ]{6,}")
+	regex = re.compile('[A-Z ]{6,}[A-Z ]{6,}')
 
 	# parse the XML tree
 	tree = ElementTree.parse('../data/' + file)
@@ -76,17 +76,39 @@ def get_single_file_data(file, file_index, num_files):
 	return title_sequences
 
 
-
 def get_title_sequence_data():
 	'''
 	Reads the dataset of title sequences off disk, or creates it if it doesn't yet exist.
 	'''
 	# get a list of the files we are looking to parse for title sequences
-	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ]
+	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ][:100]
 
-	title_sequences = Parallel(cpu_count())((delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files)))
+	title_sequences = Parallel(cpu_count())(delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files))
 
-	return title_sequences
+	data = [ sequence for sequences in title_sequences for sequence in sequences ]
+
+	id_mapping = {}
+
+	def is_infrequent(title):
+		return titles.count(title) < 10
+
+	titles = [ datum for l in data for datum in l ]
+	infrequent_titles = multiprocess.Pool(cpu_count()).map_async(is_infrequent, [ title for title in sorted(set(titles)) ]).get()
+	
+	for idx, title in enumerate(sorted(set(titles))):
+		if infrequent_titles[idx]:
+			id_mapping[title] = 0
+
+	current_id = 1
+	for title in set([ datum for l in data for datum in l ]).difference(set(id_mapping.keys())):
+		if title not in id_mapping.keys():
+			id_mapping[title] = current_id
+			current_id += 1
+
+	lengths = [ len(datum) for datum in data ]
+	data = np.concatenate([ np.array([ id_mapping[datum] for datum in l ]) for l in data ]).reshape((-1, 1))
+
+	return data, lengths, id_mapping
 
 
 if __name__ == '__main__':
@@ -106,28 +128,12 @@ if __name__ == '__main__':
 	# get the sequential job title data
 	print '\n...Importing sequential job title data.\n'
 	if not 'sequential_title_data.p' in os.listdir('../data/'):
-		data = get_title_sequence_data()
-		p.dump(data, open('../data/sequential_title_data.p', 'wb'))
+		data, lengths, mapping = get_title_sequence_data()
+		p.dump((data, lengths, mapping), open('../data/sequential_title_data.p', 'wb'))
 	else:
-		data = p.load(open('../data/sequential_title_data.p', 'rb'))
+		data, lengths, mapping = p.load(open('../data/sequential_title_data.p', 'rb'))
 
-	data = [ datum for l in data for datum in l ][:5000]
-
-	print '\nNumber of distinct job titles (after lowercasing and removing non-letter characters:', len(set([ datum for l in data for datum in l ]))
-
-	# for idx, title in enumerate(set([ datum for l in data for datum in l ])):
-	# 	print idx	
-	# 	if ([ datum for l in data for datum in l ]).count(title) < 10:
-	# 		data = [ 'X' if datum == title else datum for l in data for datum in l ]
-
-	id_mapping = {}
-	current_id = 0
-	for title in set([ datum for l in data for datum in l ]):
-		id_mapping[title] = current_id
-		current_id += 1
-
-	lengths = [ len(datum) for datum in data ]
-	data = np.concatenate([ np.array([ id_mapping[datum] for datum in l ]) for l in data ]).reshape((-1, 1))
+	print '\nNumber of distinct job titles (after lowercasing and removing non-letter characters:', len(set(mapping.values()))
 
 	print '\nThere are', data.shape[0], 'job title sequence examples.'
 
