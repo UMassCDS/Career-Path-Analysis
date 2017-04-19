@@ -4,7 +4,7 @@ Replicating the TITLE model from "Modeling Career Path Trajectories" (Mimno & Mc
 @author: Dan Saunders (djsaunde.github.io)
 '''
 
-import os, re, sys, argparse, multiprocess
+import os, re, sys, argparse, multiprocess, timeit
 
 import numpy as np
 import cPickle as p
@@ -81,9 +81,11 @@ def get_title_sequence_data():
 	Reads the dataset of title sequences off disk, or creates it if it doesn't yet exist.
 	'''
 	# get a list of the files we are looking to parse for title sequences
-	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ][:100]
+	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ][:4]
 
+	start_time = timeit.default_timer()
 	title_sequences = Parallel(cpu_count())(delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files))
+	print '\nIt took', timeit.default_timer() - start_time, 'seconds to load the resume data.'
 
 	data = [ sequence for sequences in title_sequences for sequence in sequences ]
 
@@ -93,17 +95,22 @@ def get_title_sequence_data():
 		return titles.count(title) < 10
 
 	titles = [ datum for l in data for datum in l ]
+
+	start_time = timeit.default_timer()
 	infrequent_titles = multiprocess.Pool(cpu_count()).map_async(is_infrequent, [ title for title in sorted(set(titles)) ]).get()
-	
+	print '\nIt took', timeit.default_timer() - start_time, 'seconds to remove infrequent titles.'
+
 	for idx, title in enumerate(sorted(set(titles))):
 		if infrequent_titles[idx]:
 			id_mapping[title] = 0
 
+	start_time = timeit.default_timer()
 	current_id = 1
 	for title in set([ datum for l in data for datum in l ]).difference(set(id_mapping.keys())):
 		if title not in id_mapping.keys():
 			id_mapping[title] = current_id
 			current_id += 1
+	print '\nIt took', timeit.default_timer() - start_time, 'seconds map job titles to unique integer IDs.'
 
 	lengths = [ len(datum) for datum in data ]
 	data = np.concatenate([ np.array([ id_mapping[datum] for datum in l ]) for l in data ]).reshape((-1, 1))
