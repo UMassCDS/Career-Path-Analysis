@@ -1,5 +1,5 @@
 '''
-Replicating the TITLE model from "Modeling Career Path Trajectories" (Mimno & McCallum 2008, unpublished).
+Using a hidden Markov model to learn a transition model between job titles.
 
 @author: Dan Saunders (djsaunde.github.io)
 '''
@@ -24,6 +24,7 @@ def get_single_file_data(file, file_index, num_files):
 
 	# create data structure to store job title sequences
 	title_sequences = []
+	counts = {}
 
 	# for removing non-letter characters
 	regex = re.compile('[A-Z ]{6,}[A-Z ]{6,}')
@@ -51,6 +52,10 @@ def get_single_file_data(file, file_index, num_files):
 					if tag.tag == 'Title':
 						if tag.text is not None and tag.text != '':
 							title = regex.sub('', tag.text.lower())
+							if title not in counts.keys():
+								counts[title] = 1
+							else:
+								counts[title] += 1
 
 					if tag.tag == 'StartYear':
 						start_year = int(tag.text)
@@ -73,7 +78,7 @@ def get_single_file_data(file, file_index, num_files):
 				if len(to_append) >= 2:
 					title_sequences.append(to_append)
 
-	return title_sequences
+	return title_sequences, counts
 
 
 def get_title_sequence_data():
@@ -81,36 +86,40 @@ def get_title_sequence_data():
 	Reads the dataset of title sequences off disk, or creates it if it doesn't yet exist.
 	'''
 	# get a list of the files we are looking to parse for title sequences
-	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ][:4]
+	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ]
 
 	start_time = timeit.default_timer()
-	title_sequences = Parallel(cpu_count())(delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files))
+	out = Parallel(cpu_count())(delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files))
+	
+	title_sequences = []
+	counts = {}
+	for output in out:
+		title_sequences.extend(output[0])
+		counts = dict((k, counts.get(k, 0) + output[1].get(k, 0)) for k in set(counts.keys()) | set(output[1].keys()))
 	print '\nIt took', timeit.default_timer() - start_time, 'seconds to load the resume data.'
 
-	data = [ sequence for sequences in title_sequences for sequence in sequences ]
+	data = title_sequences
+	titles = [ title for datum in data for title in datum ]
 
 	id_mapping = {}
 
-	def is_infrequent(title):
-		return titles.count(title) < 10
-
-	titles = [ datum for l in data for datum in l ]
-
-	start_time = timeit.default_timer()
-	infrequent_titles = multiprocess.Pool(cpu_count()).map_async(is_infrequent, [ title for title in sorted(set(titles)) ]).get()
-	print '\nIt took', timeit.default_timer() - start_time, 'seconds to remove infrequent titles.'
-
 	for idx, title in enumerate(sorted(set(titles))):
-		if infrequent_titles[idx]:
+		if counts[title] < 10:
 			id_mapping[title] = 0
 
+	for datum in data:
+		for title in datum:
+			if title in id_mapping.keys():
+				data.remove(datum)
+				break
+
 	start_time = timeit.default_timer()
-	current_id = 1
+	current_id = 0
 	for title in set([ datum for l in data for datum in l ]).difference(set(id_mapping.keys())):
 		if title not in id_mapping.keys():
 			id_mapping[title] = current_id
 			current_id += 1
-	print '\nIt took', timeit.default_timer() - start_time, 'seconds map job titles to unique integer IDs.'
+	print '\nIt took', timeit.default_timer() - start_time, 'seconds to map job titles to unique integer IDs.'
 
 	lengths = [ len(datum) for datum in data ]
 	data = np.concatenate([ np.array([ id_mapping[datum] for datum in l ]) for l in data ]).reshape((-1, 1))
