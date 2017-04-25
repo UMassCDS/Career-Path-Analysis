@@ -86,7 +86,7 @@ def get_title_sequence_data():
 	Reads the dataset of title sequences off disk, or creates it if it doesn't yet exist.
 	'''
 	# get a list of the files we are looking to parse for title sequences
-	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ]
+	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ][:50]
 
 	start_time = timeit.default_timer()
 	out = Parallel(cpu_count())(delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files))
@@ -107,11 +107,22 @@ def get_title_sequence_data():
 		if counts[title] < 10:
 			id_mapping[title] = 0
 
-	for datum in data:
+
+	start_time = timeit.default_timer()
+	print '\nRemoving low-frequency job titles.\n'
+	
+	for idx, datum in enumerate(data):
+		if idx % 500 == 0:
+			print 'Progress:', idx, '/', len(data)
 		for title in datum:
 			if title in id_mapping.keys():
 				data.remove(datum)
 				break
+
+	print 'Progress:', len(data), '/', len(data), '\n'
+	print '\nIt took', timeit.default_timer() - start_time, 'seconds to remove low-frequency job titles.'
+
+	print '\nMapping job titles to unique integer IDs.'
 
 	start_time = timeit.default_timer()
 	current_id = 0
@@ -119,6 +130,7 @@ def get_title_sequence_data():
 		if title not in id_mapping.keys():
 			id_mapping[title] = current_id
 			current_id += 1
+
 	print '\nIt took', timeit.default_timer() - start_time, 'seconds to map job titles to unique integer IDs.'
 
 	lengths = [ len(datum) for datum in data ]
