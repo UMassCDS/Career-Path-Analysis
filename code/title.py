@@ -20,7 +20,7 @@ def get_single_file_data(file, file_index, num_files):
 	'''
 	Reads in a single file of resume data (contains 50,000 resumes).
 	'''
-	print '...Loading resume file', file_index, '/', num_files
+	print '...Loading resume file', file_index + 1, '/', num_files
 
 	# create data structure to store job title sequences
 	title_sequences = []
@@ -55,8 +55,8 @@ def get_single_file_data(file, file_index, num_files):
 					if tag.tag == 'StartYear':
 						start_year = int(tag.text)
 
-					# Make a tuple of the start year and description
-					year_title_tuple = (start_year, title)
+				# Make a tuple of the start year and description
+				year_title_tuple = (start_year, title)
 
 				# Append the tuple to list of transitions in that resume
 				job_list.append(year_title_tuple)
