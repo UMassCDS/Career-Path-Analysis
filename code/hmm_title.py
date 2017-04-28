@@ -55,12 +55,14 @@ if __name__ == '__main__':
 	# for key, value in sorted(counts.items(), key=itemgetter(1)):
 	# 	print key, ':', counts[key]
 
-	print '\n...Fitting multinomial hidden Markov model to job title sequence data.\n'
+	print '\n...Fitting multinomial hidden Markov model to job title sequence data.'
 
 	# build and fit the hidden Markov model
 	model = MultinomialHMM(n_components=n_components, n_iter=n_iter, verbose=True)
 	model.fit(data, lengths)
 
-	print model.score(data)
+	print '\nLog-likelihood of data under HMM model:', model.score(data)
 
 	p.dump((model, mapping), open('../data/hmm_title_' + str(n_components) + '_' + str(n_resume_files) + '.p', 'wb'))
+
+	print '\n'
