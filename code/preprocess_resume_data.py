@@ -75,12 +75,12 @@ def get_single_file_data(file, file_index, num_files):
 	return title_sequences, counts
 
 
-def get_title_sequence_data(n_resume_files):
+def get_title_sequence_data(n_resume_files, n_resume_files_skip=0, id_mapping=None):
 	'''
 	Reads the dataset of title sequences off disk, or creates it if it doesn't yet exist.
 	'''
 	# get a list of the files we are looking to parse for title sequences
-	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ][:n_resume_files]
+	files = [ file for file in os.listdir('../data/') if 'resumes.xml' in file ][n_resume_files_skip:n_resume_files_skip + n_resume_files]
 
 	start_time = timeit.default_timer()
 	out = Parallel(cpu_count())(delayed(get_single_file_data)(file, idx, len(files)) for idx, file in enumerate(files))
@@ -105,9 +105,9 @@ def get_title_sequence_data(n_resume_files):
 		if counts[title] < 10:
 			low_frequency_titles.append(title)
 
-	for key in counts.keys():
-		if counts[key] < 10:
-			del counts[key]
+	# for key in counts.keys():
+	# 	if counts[key] < 10:
+	# 		del counts[key]
 
 	print '\nNumber of job titles after finding low-frequency ones:', len(set(titles)) - len(low_frequency_titles)
 
@@ -116,21 +116,31 @@ def get_title_sequence_data(n_resume_files):
 
 	print '\nNumber of job sequences before removing low-frequency job titles:', len(data)
 	
-	data[:] = ifilterfalse(lambda datum : any([ title in low_frequency_titles for title in datum ]), data)
+	# data[:] = ifilterfalse(lambda datum : any([ title in low_frequency_titles for title in datum ]), data)
 
-	print '\nNumber of job sequences after removing low-frequency job titles:', len(data)
+	# print '\nNumber of job sequences after removing low-frequency job titles:', len(data)
 
-	print '\nIt took', timeit.default_timer() - start_time, 'seconds to remove low-frequency job titles.'
-	print '\nMapping job titles to unique integer IDs.'
+	# print '\nIt took', timeit.default_timer() - start_time, 'seconds to remove low-frequency job titles.'
+	# print '\nMapping job titles to unique integer IDs.'
 
-	id_mapping = {}
+	if id_mapping == None:
+		id_mapping = {}
 
-	start_time = timeit.default_timer()
-	current_id = 0
-	for title in set([ datum for l in data for datum in l ]).difference(set(id_mapping.keys())):
-		if title not in id_mapping.keys():
-			id_mapping[title] = current_id
-			current_id += 1
+		for key in counts.keys():
+			if counts[key] < 10:
+				id_mapping[key] = 0
+
+		start_time = timeit.default_timer()
+		current_id = 1
+		for title in set([ datum for l in data for datum in l ]).difference(set(id_mapping.keys())):
+			if title not in id_mapping.keys():
+				id_mapping[title] = current_id
+				current_id += 1
+
+	if id_mapping != None:
+		for key in counts.keys():
+			if key not in id_mapping.keys():
+				id_mapping[key] = 0
 
 	print '\nIt took', timeit.default_timer() - start_time, 'seconds to map job titles to unique integer IDs.'
 

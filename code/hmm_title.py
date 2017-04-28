@@ -45,21 +45,22 @@ if __name__ == '__main__':
 	mapping = { value : key for key, value in mapping.iteritems() }
 
 	print '\nNumber of distinct job titles (after lowercasing and removing non-letter characters:', len(set(mapping.values()))
-
 	print '\nThere are', len(lengths), 'job title sequence examples.'
 
-	print '\nListing job titles by ID\n'
-	for key in sorted(mapping.keys()):
-		print key, ':', mapping[key]
+	# print '\nListing job titles by ID\n'
+	# for key in sorted(mapping.keys()):
+	# 	print key, ':', mapping[key]
 
-	print '\nListing job title counts by job title\n'
-	for key, value in sorted(counts.items(), key=itemgetter(1)):
-		print key, ':', counts[key]
+	# print '\nListing job title counts by job title\n'
+	# for key, value in sorted(counts.items(), key=itemgetter(1)):
+	# 	print key, ':', counts[key]
 
 	print '\n...Fitting multinomial hidden Markov model to job title sequence data.\n'
 
 	# build and fit the hidden Markov model
 	model = MultinomialHMM(n_components=n_components, n_iter=n_iter, verbose=True)
 	model.fit(data, lengths)
+
+	print model.score(data)
 
 	p.dump((model, mapping), open('../data/hmm_title_' + str(n_components) + '_' + str(n_resume_files) + '.p', 'wb'))
