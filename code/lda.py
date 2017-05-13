@@ -18,7 +18,7 @@ import numpy as np
 np.set_printoptions(threshold=np.nan)
 
 
-def print_top_words(model, feature_names, n_words):
+def print_top_words(model, feature_names, n_words,n_topic=0):
     '''
     Prints top 'n_words' words from the topics 'feature_names'.
 
@@ -26,11 +26,17 @@ def print_top_words(model, feature_names, n_words):
     feature_names: The names of the representative word tokens.
     n_words: The number of representative words to print for each topic.
     '''
-
-    for topic_idx, topic in enumerate(model.components_):
-        print 'Topic #%d:' % topic_idx
-        print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
-    print '\n'
+    if n_topic ==0:
+        for topic_idx, topic in enumerate(model.components_):
+            print 'Topic #%d:' % topic_idx
+            print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
+        print '\n'
+    else:
+        for topic_idx, topic in enumerate(model.components_):
+            if topic_idx == n_topic:
+                print 'Topic #%d:' % topic_idx
+                print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
+     
 
 
 def lda(n_words=15, n_topics=200):
@@ -45,10 +51,16 @@ def lda(n_words=15, n_topics=200):
     print '\n...Importing job description data.'
     if not 'resume_test_data.p' in os.listdir('../test/'):
     	build_dataset()
+<<<<<<< HEAD
+    	sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
+    else:
+    	sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
+=======
     	sequence_data = p.load(open('../test/resume_test_data.p', 'rb'))
     else:
     	sequence_data = p.load(open('../test/resume_test_data.p', 'rb'))
 	
+>>>>>>> e24fb24b096259c3f59a0b64b43821dabe91020f
 
     # parse data into LDA-usable format
     data = []
@@ -129,6 +141,7 @@ def lda(n_words=15, n_topics=200):
     
 
 if __name__ == '__main__':
+    
     n_words = raw_input('Enter number of words to print (default 15): ')
     if n_words == '':
         n_words = 15
@@ -141,4 +154,3 @@ if __name__ == '__main__':
     else:
         n_topics = int(n_topics)
 
-    lda(n_words, n_topics)
