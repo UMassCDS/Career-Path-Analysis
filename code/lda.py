@@ -1,8 +1,8 @@
-'''
+"""
 Template for running LDA on job description corpus.
 
 @author: Dan Saunders (djsaunde.github.io)
-'''
+"""
 
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
@@ -10,23 +10,24 @@ from sklearn.feature_extraction.text import CountVectorizer
 from build_dataset import build_dataset
 
 import matplotlib.pyplot as plt
-import os, timeit
+import os
+import timeit
 import cPickle as p
-import pandas as pd
 import numpy as np
+
 
 np.set_printoptions(threshold=np.nan)
 
 
-def print_top_words(model, feature_names, n_words,n_topic=0):
-    '''
+def print_top_words(model, feature_names, n_words, n_topic=0):
+    """
     Prints top 'n_words' words from the topics 'feature_names'.
 
     model: The LDA model from which to print representative words from topics.
     feature_names: The names of the representative word tokens.
     n_words: The number of representative words to print for each topic.
-    '''
-    if n_topic ==0:
+    """
+    if n_topic == 0:
         for topic_idx, topic in enumerate(model.components_):
             print 'Topic #%d:' % topic_idx
             print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
@@ -38,22 +39,22 @@ def print_top_words(model, feature_names, n_words,n_topic=0):
                 print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
      
 
-
 def lda(n_words=15, n_topics=200):
-    '''
-    Runs the LDA algorithm, prints out the top 'n_words', and dumps the fitted LDA model to a pickled file.
+    """
+    Runs the LDA algorithm, prints out the top 'n_words', and dumps the fitted LDA model to a
+    pickled file.
 
     n_words: The number of words to print out from each discovered topic.
     n_topics: the number of topics to learn from the resume dataset.
-    '''
+    """
 
     # Import data
     print '\n...Importing job description data.'
-    if not 'resume_test_data.p' in os.listdir('../test/'):
-    	build_dataset()
-    	sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
+    if 'resume_test_data.p' not in os.listdir('../test/'):
+        build_dataset()
+        sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
     else:
-    	sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
+        sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
 
     # parse data into LDA-usable format
     data = []
@@ -79,15 +80,17 @@ def lda(n_words=15, n_topics=200):
     tf_vectorizer = CountVectorizer()
     tf = tf_vectorizer.fit_transform(data)
 
-    p.dump(tf_vectorizer,open('../models/tf_vect.p','wb'))
-	
+    p.dump(tf_vectorizer, open('../models/tf_vect.p', 'wb'))
+
     # save vocabulary for later use
     vocab = tf_vectorizer.vocabulary_
 
-    # Build LDA model. Mimno paper uses 200 topics; otherwise, I'll keep the default scikit-learn model parameters.
-    # We can play with model parameters in order to investigate how they affect results
+    # Build LDA model. Mimno paper uses 200 topics; otherwise, I'll keep the default scikit-learn
+    # model parameters.  We can play with model parameters in order to investigate how they affect
+    # results.
     print '...Building LDA model.'
-    lda_model = LatentDirichletAllocation(n_topics=n_topics, learning_method='batch', evaluate_every=10, n_jobs=16, verbose=10)
+    lda_model = LatentDirichletAllocation(n_topics=n_topics, learning_method='batch',
+                                          evaluate_every=10, n_jobs=16, verbose=10)
 
     start_time = timeit.default_timer()
 
@@ -98,7 +101,9 @@ def lda(n_words=15, n_topics=200):
     # save unique class labels for LDA topics
     class_components = lda_model.components_
 
-    print '\nCompleted fitting LDA model to job description text in ' + str(timeit.default_timer() - start_time) + ' seconds.\n'
+    secs = timeit.default_timer() - start_time
+    print "\nCompleted fitting LDA model to job description text in {} seconds.\n".format(secs)
+
 
     # view topics learned by the model
     print '...Viewing topics.\n'
@@ -111,12 +116,14 @@ def lda(n_words=15, n_topics=200):
     
     # write fitted sequential data to pickle file
     print '...saving fitted sequential data.\n'
-    fitted_sequential_data = [ [ fitted_data[idx] for idx in xrange(job_count) ] for job_count in job_sequence_counts ]
+    fitted_sequential_data = [ [ fitted_data[idx] for idx in xrange(job_count) ]
+                                                    for job_count in job_sequence_counts ]
     print len(fitted_sequential_data)
     print len([ job for datum in fitted_sequential_data for job in datum ])
-    p.dump([ [ fitted_data[idx] for idx in xrange(job_count) ] for job_count in job_sequence_counts ], open('../data/fitted_sequential_data' + str(n_topics) + '.p', 'wb'))
+    p.dump([ [ fitted_data[idx] for idx in xrange(job_count) ]
+                                    for job_count in job_sequence_counts ],
+           open('../data/fitted_sequential_data' + str(n_topics) + '.p', 'wb'))
     
-	
     for idx in xrange(5):
         # print out example output from LDA
         print data[idx]
