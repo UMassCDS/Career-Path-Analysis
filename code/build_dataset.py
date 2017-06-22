@@ -4,26 +4,25 @@ Parses XML dataset into sequences of job descriptions.
 TODO: We need to parse corresponding job titles and perhaps supporting metadata from the resumes.
 """
 
+import sys
 import xml.etree.ElementTree as ET
-import os
 import cPickle as pickle
 from nltk.corpus import stopwords
 from operator import itemgetter
 
     
-def build_dataset():
+def build_dataset(infilenames, outfile):
     """
     Collects job description sequences for all the resumes in the dataset
     """
     # get the names of all files in the data directory
-    list_of_dirs = os.listdir('../data')
     stop = set(stopwords.words('english'))
 
     all_job_desc = []
 
     # look through all files in the data directory
-    for idx, filename in enumerate(list_of_dirs):
-        print '...Loading', filename, '(',  str(idx + 1), '/', str(len(list_of_dirs)), ')' 
+    for idx, filename in infilenames:
+        print "...Loading {} ({}/{})".format(filename, idx + 1, len(infilenames))
 
         # if the file is an XML file...
         if '.xml' in filename:
@@ -76,8 +75,13 @@ def build_dataset():
         print '...we\'ve parsed', len(all_job_desc), 'job descriptions so far'
         
     # pickle the job description sequences
-    pickle.dump(all_job_desc, open('../data/resume_data.p', 'wb'))
+    with open(outfile, 'wb') as outp:
+        pickle.dump(all_job_desc, outp)
 
+    return len(all_job_desc)
 
 if __name__ == '__main__':
-    build_dataset()
+    ins = sys.argv[1:-1]
+    out = sys.argv[-1]
+    build_dataset(ins, out)
+
