@@ -51,16 +51,9 @@ def lda(n_words=15, n_topics=200):
     print '\n...Importing job description data.'
     if not 'resume_test_data.p' in os.listdir('../test/'):
     	build_dataset()
-<<<<<<< HEAD
     	sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
     else:
     	sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
-=======
-    	sequence_data = p.load(open('../test/resume_test_data.p', 'rb'))
-    else:
-    	sequence_data = p.load(open('../test/resume_test_data.p', 'rb'))
-	
->>>>>>> e24fb24b096259c3f59a0b64b43821dabe91020f
 
     # parse data into LDA-usable format
     data = []
