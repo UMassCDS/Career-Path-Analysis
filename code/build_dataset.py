@@ -55,10 +55,9 @@ def build_dataset():
                             if member_tag.tag == 'StartYear':
                                 start_year = int(member_tag.text)
 
-                            # Make a tuple of the start year and description
-                            job_year_tuple = (start_year, filtered_desc)
+                        # Make a tuple of the start year and description
+                        job_year_tuple = (start_year, filtered_desc)
 
-                        #zzz Todo is this an indentation error?
                         # Append the tuple to list of transitions in that resume
                         job_tuple_list.append(job_year_tuple)
 
