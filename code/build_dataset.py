@@ -40,7 +40,8 @@ def build_dataset(infilenames, outfile):
                 # If there are more than two transitions in that resume
                 if len(exp_tags_in_resume) >= 2:
                     job_tuple_list = []
-                    start_year = 0
+                    start_year = 0  #zzz todo: won't this result in randomly ordered jobs if there's
+                                    #    todo: a start year missing?
                     filtered_desc = None
                     sorted_by_year_tuples = []
 
