@@ -9,6 +9,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 
 from build_dataset import build_dataset
 
+import sys
 import matplotlib.pyplot as plt
 import os
 import timeit
@@ -39,28 +40,11 @@ def print_top_words(model, feature_names, n_words, n_topic=0):
                 print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
      
 
-def lda(n_words=15, n_topics=200):
-    """
-    Runs the LDA algorithm, prints out the top 'n_words', and dumps the fitted LDA model to a
-    pickled file.
-
-    n_words: The number of words to print out from each discovered topic.
-    n_topics: the number of topics to learn from the resume dataset.
-    """
-
-    # Import data
-    print '\n...Importing job description data.'
-    if 'resume_test_data.p' not in os.listdir('../test/'):
-        build_dataset()
-        sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
-    else:
-        sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
-
-    # parse data into LDA-usable format
+def flatten_descrip_seqs(job_desc_seqs):
     data = []
     job_sequence_counts = []
     total_job_count = 0
-    for datum_idx, datum in enumerate(sequence_data):
+    for datum_idx, datum in enumerate(job_desc_seqs):
         job_count = 0
         for job_descr_indx, job_description in enumerate(datum):
             data.append(' '.join(job_description))
@@ -74,11 +58,49 @@ def lda(n_words=15, n_topics=200):
     print 'number of job descriptions:', total_job_count
     print 'number of job description sequences:', len(job_sequence_counts)
     print '\n'
+    return data
+
+
+def lda(job_descs, n_topics=200, n_words=15):
+    """
+    Runs the LDA algorithm, prints out the top 'n_words', and dumps the fitted LDA model to a
+    pickled file.
+
+    n_words: The number of words to print out from each discovered topic.
+    n_topics: the number of topics to learn from the resume dataset.
+    """
+
+    # Import data
+    # print '\n...Importing job description data.'
+    # if 'resume_test_data.p' not in os.listdir('../test/'):
+    #     build_dataset()
+    #     sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
+    # else:
+    #     sequence_data = p.load(open('../data/resume_data_train_test.p', 'rb'))
+
+    # parse data into LDA-usable format
+    # data = flatten_descrip_seqs(job_desc_seqs_file)
+    # job_sequence_counts = []
+    # total_job_count = 0
+    # for datum_idx, datum in enumerate(sequence_data):
+    #     job_count = 0
+    #     for job_descr_indx, job_description in enumerate(datum):
+    #         data.append(' '.join(job_description))
+    #         job_count += 1
+    #         total_job_count += 1
+    #     if job_count != 0:
+    #         job_sequence_counts.append(job_count)
+    #
+    # # print out some useful information
+    # print '\n'
+    # print 'number of job descriptions:', total_job_count
+    # print 'number of job description sequences:', len(job_sequence_counts)
+    # print '\n'
 
     # Use tf (raw term count) features for LDA.
     print '...Extracting term frequency (bag of words) features for LDA.'
     tf_vectorizer = CountVectorizer()
-    tf = tf_vectorizer.fit_transform(data)
+    tf = tf_vectorizer.fit_transform(job_descs)
 
     p.dump(tf_vectorizer, open('../models/tf_vect.p', 'wb'))
 
@@ -114,19 +136,19 @@ def lda(n_words=15, n_topics=200):
     print '...Saving model.\n'
     p.dump(lda_model, open('../models/lda_' + str(n_topics) + '_topics.p', 'wb'))
     
-    # write fitted sequential data to pickle file
-    print '...saving fitted sequential data.\n'
-    fitted_sequential_data = [ [ fitted_data[idx] for idx in xrange(job_count) ]
-                                                    for job_count in job_sequence_counts ]
-    print len(fitted_sequential_data)
-    print len([ job for datum in fitted_sequential_data for job in datum ])
-    p.dump([ [ fitted_data[idx] for idx in xrange(job_count) ]
-                                    for job_count in job_sequence_counts ],
-           open('../data/fitted_sequential_data' + str(n_topics) + '.p', 'wb'))
+    # # write fitted sequential data to pickle file
+    # print '...saving fitted sequential data.\n'
+    # fitted_sequential_data = [ [ fitted_data[idx] for idx in xrange(job_count) ]
+    #                                                 for job_count in job_sequence_counts ]
+    # print len(fitted_sequential_data)
+    # print len([ job for datum in fitted_sequential_data for job in datum ])
+    # p.dump([ [ fitted_data[idx] for idx in xrange(job_count) ]
+    #                                 for job_count in job_sequence_counts ],
+    #        open('../data/fitted_sequential_data' + str(n_topics) + '.p', 'wb'))
     
     for idx in xrange(5):
         # print out example output from LDA
-        print data[idx]
+        print job_descs[idx]
         print fitted_data[idx]
         print fitted_data.shape
 
@@ -141,16 +163,26 @@ def lda(n_words=15, n_topics=200):
     
 
 if __name__ == '__main__':
-    
-    n_words = raw_input('Enter number of words to print (default 15): ')
-    if n_words == '':
-        n_words = 15
-    else:
-        n_words = int(n_words)
 
-    n_topics = raw_input('Enter number of topics to learn (default 100): ')
-    if n_topics == '':
-        n_topics = 100
-    else:
-        n_topics = int(n_topics)
+    # n_words = raw_input('Enter number of words to print (default 15): ')
+    # if n_words == '':
+    #     n_words = 15
+    # else:
+    #     n_words = int(n_words)
+    #
+    # n_topics = raw_input('Enter number of topics to learn (default 100): ')
+    # if n_topics == '':
+    #     n_topics = 100
+    # else:
+    #     n_topics = int(n_topics)
 
+    infile_name = sys.argv[1]
+    n_topics = int(sys.argv[2])
+    n_words = int(sys.argv[3])
+
+    with open(infile_name, 'rb') as infile:
+        job_desc_seqs = p.load(infile)
+
+    job_descs = flatten_descrip_seqs(job_desc_seqs)
+
+    lda(job_descs, n_topics, n_words)
