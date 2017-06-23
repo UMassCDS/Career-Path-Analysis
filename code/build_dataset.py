@@ -82,6 +82,9 @@ def build_dataset(infilenames, outfile):
     return len(all_job_desc)
 
 if __name__ == '__main__':
+    USAGE = sys.argv[0] + " infile0.tgz [infile1.tgz infile2.tgz ...] outfile.p"
+    if len(sys.argv) < 3:
+        sys.exit(USAGE)
     ins = sys.argv[1:-1]
     out = sys.argv[-1]
     build_dataset(ins, out)
