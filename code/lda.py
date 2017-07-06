@@ -4,6 +4,8 @@ Template for running LDA on job description corpus.
 @author: Dan Saunders (djsaunde.github.io)
 """
 
+# todo: add logging support
+
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 
@@ -20,7 +22,18 @@ import numpy as np
 np.set_printoptions(threshold=np.nan)
 
 
-def print_top_words(model, feature_names, n_words, n_topic=0):
+def get_top_words(words, prob_distrib, num):
+    word_indices_sorted = prob_distrib.argsort()[::-1]
+
+    rets = []
+    for word_idx in word_indices_sorted[:num]:
+        word = words[word_idx]
+        word_prob = prob_distrib[word_idx]
+        rets.append((word, word_prob))
+    return rets
+
+
+def print_top_words(components_norm, feature_names, n_words, n_topic=0):
     """
     Prints top 'n_words' words from the topics 'feature_names'.
 
@@ -28,17 +41,27 @@ def print_top_words(model, feature_names, n_words, n_topic=0):
     feature_names: The names of the representative word tokens.
     n_words: The number of representative words to print for each topic.
     """
-    if n_topic == 0:
-        for topic_idx, topic in enumerate(model.components_):
-            print 'Topic #%d:' % topic_idx
-            print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
-        print '\n'
-    else:
-        for topic_idx, topic in enumerate(model.components_):
-            if topic_idx == n_topic:
-                print 'Topic #%d:' % topic_idx
-                print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
-     
+    # if n_topic == 0:
+    #     for topic_idx, topic in enumerate(model.components_):
+    #         print 'Topic #%d:' % topic_idx
+    #         print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
+    #     print '\n'
+    # else:
+    #     for topic_idx, topic in enumerate(model.components_):
+    #         if topic_idx == n_topic:
+    #             print 'Topic #%d:' % topic_idx
+    #             print ' '.join([feature_names[i] for i in topic.argsort()[:-n_words - 1:-1]])
+
+    for topic_idx, topic in enumerate(components_norm):
+
+        print 'topic #%d:' % topic_idx
+
+        word_indices_sorted = topic.argsort()[::-1]
+        for word_idx in word_indices_sorted[:n_words]:
+            word = feature_names[word_idx]
+            word_freq = topic[word_idx]
+            print "\t", word, ":\t", word_freq
+
 
 def flatten_descrip_seqs(job_desc_seqs):
     data = []
@@ -120,8 +143,14 @@ def lda(job_descs, n_topics=200, n_words=15):
     print '...Fitting LDA model to job description text.\n'
     fitted_data = lda_model.fit_transform(tf)
     
-    # save unique class labels for LDA topics
-    class_components = lda_model.components_
+    # # save unique class labels for LDA topics
+    # class_components = lda_model.components_
+
+
+    # need to normalize to get probabilities, see:
+    # https: // github.com / scikit - learn / scikit - learn / issues / 6353
+    # https://github.com/scikit-learn/scikit-learn/pull/8805/commits/ceab61ce78cddfa8f2975989730a8fbc3fc76ada
+    components_norm = lda_model.components_ / lda_model.components_.sum(axis=1)[:, np.newaxis]
 
     secs = timeit.default_timer() - start_time
     print "\nCompleted fitting LDA model to job description text in {} seconds.\n".format(secs)
@@ -130,7 +159,9 @@ def lda(job_descs, n_topics=200, n_words=15):
     # view topics learned by the model
     print '...Viewing topics.\n'
     tf_feature_names = tf_vectorizer.get_feature_names()
-    print_top_words(lda_model, tf_feature_names, n_words)
+    print_top_words(components_norm, tf_feature_names, n_words)
+
+    print "\n\n"
 
     # # save model to pickle file
     # print '...Saving model.\n'
@@ -146,22 +177,36 @@ def lda(job_descs, n_topics=200, n_words=15):
     #                                 for job_count in job_sequence_counts ],
     #        open('../data/fitted_sequential_data' + str(n_topics) + '.p', 'wb'))
     
-    for idx in xrange(5):
+    for desc_idx in range(10, 30):
         # print out example output from LDA
-        print job_descs[idx]
-        print fitted_data[idx]
-        print fitted_data.shape
+        print "job desc {}: {}".format(desc_idx, job_descs[desc_idx])
+
+        print_threshold = 0.01
+        topic_indices_sorted = fitted_data[desc_idx].argsort()[::-1]
+        for t, topic_idx in enumerate(topic_indices_sorted):
+
+            if fitted_data[desc_idx][topic_idx] < print_threshold:
+                break
+
+            print "\t{}. topic {} ({}):".format(t, topic_idx, fitted_data[desc_idx][topic_idx])
+            word_prob_tups = get_top_words(tf_feature_names, components_norm[topic_idx], 10)
+            for word, prob in word_prob_tups:
+                print "\t\t", word, ":\t", prob
+            print "\n"
+
+        # print fitted_data[idx]
+        # print fitted_data.shape
 
         #todo: print top x words for all topics that are above some threshold for the job desc doc
 
 
 
-        # plot the likelihood for each component for the example output
-        plt.plot(fitted_data[idx])
-        plt.title('Distribution over Topics')
-        plt.xlabel('Topic Index')
-        plt.ylabel('Likelihood')
-        plt.show()
+        # # plot the likelihood for each component for the example output
+        # plt.plot(fitted_data[idx])
+        # plt.title('Distribution over Topics')
+        # plt.xlabel('Topic Index')
+        # plt.ylabel('Likelihood')
+        # plt.show()
 
     print '\n'
     
