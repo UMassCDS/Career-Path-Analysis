@@ -102,7 +102,7 @@ def lda(job_descs, n_topics=200, n_words=15):
     tf_vectorizer = CountVectorizer()
     tf = tf_vectorizer.fit_transform(job_descs)
 
-    p.dump(tf_vectorizer, open('../models/tf_vect.p', 'wb'))
+    # p.dump(tf_vectorizer, open('../models/tf_vect.p', 'wb'))
 
     # save vocabulary for later use
     vocab = tf_vectorizer.vocabulary_
@@ -132,9 +132,9 @@ def lda(job_descs, n_topics=200, n_words=15):
     tf_feature_names = tf_vectorizer.get_feature_names()
     print_top_words(lda_model, tf_feature_names, n_words)
 
-    # save model to pickle file
-    print '...Saving model.\n'
-    p.dump(lda_model, open('../models/lda_' + str(n_topics) + '_topics.p', 'wb'))
+    # # save model to pickle file
+    # print '...Saving model.\n'
+    # p.dump(lda_model, open('../models/lda_' + str(n_topics) + '_topics.p', 'wb'))
     
     # # write fitted sequential data to pickle file
     # print '...saving fitted sequential data.\n'
@@ -151,6 +151,10 @@ def lda(job_descs, n_topics=200, n_words=15):
         print job_descs[idx]
         print fitted_data[idx]
         print fitted_data.shape
+
+        #todo: print top x words for all topics that are above some threshold for the job desc doc
+
+
 
         # plot the likelihood for each component for the example output
         plt.plot(fitted_data[idx])
@@ -176,6 +180,10 @@ if __name__ == '__main__':
     # else:
     #     n_topics = int(n_topics)
 
+    USAGE = " usage: " + sys.argv[0] + " job_desc_seqs.p num_topics num_words"
+    if len(sys.argv) < 4:
+        sys.exit(USAGE)
+
     infile_name = sys.argv[1]
     n_topics = int(sys.argv[2])
     n_words = int(sys.argv[3])
@@ -186,3 +194,7 @@ if __name__ == '__main__':
     job_descs = flatten_descrip_seqs(job_desc_seqs)
 
     lda(job_descs, n_topics, n_words)
+
+
+
+
