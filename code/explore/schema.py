@@ -16,26 +16,15 @@ def print_kids(elt, elt__kids, indent=0):
             print_kids(kid, elt__kids, indent + 4)
 
 
-###################################
-
-if __name__ == '__main__':
-
-    infile_name = sys.argv[1]
-    sys.stderr.write("parsing xml {}\n".format(infile_name))
-
+def parse_kids(tree, root_elt_tag):
     elt__children = {}
-    schema_todo = {'resume'}
+    schema_todo = set()
     schema_done = set()
 
-    if infile_name.endswith('.gz'):
-        with gzip.open(infile_name, 'rb') as infile:
-            tree = ET.parse(infile)
-    else:
-        tree = ET.parse(infile_name)
     root = tree.getroot()
+    schema_todo.add(root_elt_tag)
 
     while len(schema_todo) > 0:
-
         elt_tag = schema_todo.pop()
         elt__children[elt_tag] = set()
         sys.stderr.write("exploring {}\n".format(elt_tag))
@@ -52,6 +41,24 @@ if __name__ == '__main__':
 
         schema_done.add(elt_tag)
 
+    return elt__children
+
+
+def get_tree(infile_name):
+    sys.stderr.write("parsing xml {}\n".format(infile_name))
+    if infile_name.lower().endswith('.gz'):
+        with gzip.open(infile_name, 'rb') as infile:
+            tree = ET.parse(infile)
+    else:
+        tree = ET.parse(infile_name)
+    return tree
+
+
+###################################
+
+if __name__ == '__main__':
+    tree = get_tree(sys.argv[1])
+    elt__children = parse_kids(tree, "resume")
     print_kids("resume", elt__children)
 
 
