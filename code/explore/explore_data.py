@@ -4,7 +4,9 @@ import xml.etree.ElementTree as ET
 # import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
-
+import gzip
+import string
+import unidecode
 
 LABEL_OTHER = "* other *"
 LABEL_MISSING = "* missing *"
@@ -129,42 +131,189 @@ def save_plots(elt, index):
     plt.savefig("{}_attrs_{}.png".format(elt.replace('/', '-'), index))
 
 
+def overlap(start_year1, end_year1, start_year2, end_year2):
+    if start_year1 is None:
+        if end_year1 is None:
+            return False
+        else:
+            start_year1 = end_year1
+
+    if start_year2 is None:
+        if end_year2 is None:
+            return False
+        else:
+            start_year2 = end_year2
+
+    if start_year1 <= start_year2:
+        return start_year2 <= end_year1
+    else:  # (start_year1 > start_year2)
+        return start_year1 < end_year2
+
+
 #############################
 if __name__ == '__main__':
 
     ROWS_PER_FIG = 3
     COLS_PER_FIG = 1
 
-    infile_name = sys.argv[1]
-    target_elt = sys.argv[2]
+    infile_names = sys.argv[1:-1]
+    target_elt = sys.argv[-1]
 
-    sys.stderr.write("parsing xml\n")
-    tree = ET.parse(infile_name)
-    root = tree.getroot()
+    print sys.argv
+    print infile_names
+    print target_elt
 
-    sys.stderr.write("creating attr hists\n\n")
-    attrs = get_attr_hists(root, target_elt)
+    # if 0:
+    #     sys.stderr.write("creating attr hists\n\n")
+    #     attrs = get_attr_hists(root, target_elt)
+    #
+    #     fig = plt.figure(figsize=(8, 10))
+    #
+    #     for i, (attr_name, attr_counter) in enumerate(sorted(attrs.items())):
+    #         sys.stderr.write("{}.{}\n".format(target_elt, attr_name))
+    #
+    #         idx = (i % (ROWS_PER_FIG * COLS_PER_FIG)) + 1
+    #         sys.stderr.write("\tplotting hist for {} (i={}, idx={})\n".format(attr_name, i, idx))
+    #
+    #         # df = pd.DataFrame(sorted(attr_counter.items()))
+    #         # df.columns = ["value", "count"]
+    #         df = pd.DataFrame.from_records(sorted(attr_counter.items()), index="value", columns=["value", "count"])
+    #         print df
+    #
+    #         plot_bars(attr_name, df, idx)
+    #
+    #         if (idx == ROWS_PER_FIG*COLS_PER_FIG) or (i == (len(attrs)-1)):
+    #             save_plots(target_elt, i)
+    #             fig = plt.figure(figsize=(8, 10))
+    #
+    #         sys.stderr.write("\n\n")
+    #     # save_plots(target_elt, len(attrs))
 
-    fig = plt.figure(figsize=(8, 10))
+    if 0:
+        company__persons = {}
 
-    for i, (attr_name, attr_counter) in enumerate(sorted(attrs.items())):
-        sys.stderr.write("{}.{}\n".format(target_elt, attr_name))
+        for f, infile_name in enumerate(infile_names):
+            sys.stderr.write("parsing xml {}/{} {}\n".format(f+1, len(infile_names), infile_name))
 
-        idx = (i % (ROWS_PER_FIG * COLS_PER_FIG)) + 1
-        sys.stderr.write("\tplotting hist for {} (i={}, idx={})\n".format(attr_name, i, idx))
+            if infile_name.endswith('.gz'):
+                with gzip.open(infile_name, 'rb') as infile:
+                    tree = ET.parse(infile)
+            else:
+                tree = ET.parse(infile_name)
 
-        # df = pd.DataFrame(sorted(attr_counter.items()))
-        # df.columns = ["value", "count"]
-        df = pd.DataFrame.from_records(sorted(attr_counter.items()), index="value", columns=["value", "count"])
-        print df
+            root = tree.getroot()
 
-        plot_bars(attr_name, df, idx)
+            for i, resume in enumerate(root.findall('resume')):
+                if i % 1000 == 0:
+                    sys.stderr.write("{}\n".format(i))
+                resume_id = resume.find('ResumeID').text
 
-        if (idx == ROWS_PER_FIG*COLS_PER_FIG) or (i == (len(attrs)-1)):
-            save_plots(target_elt, i)
-            fig = plt.figure(figsize=(8, 10))
+                experience = resume.find('experience')
+                if experience is not None:
+                    for experiencerecord in experience:
+                        company_name = experiencerecord.find('Company').text
+                        location = experiencerecord.find('Location').text if experiencerecord.find('Location') else None
 
-        sys.stderr.write("\n\n")
-    # save_plots(target_elt, len(attrs))
+                        try:
+                            company_name = str(company_name)
+                        except UnicodeEncodeError:
+                            company_name = str(unidecode.unidecode(company_name))
+                        company_name = company_name.lower().translate(string.maketrans("",""), string.punctuation)
+
+                        if location is not None:
+                            company_name += " " + unidecode.unidecode(location)
+
+                        # start_month = experiencerecord.find('StartMonth')
+                        start_year = experiencerecord.find('StartYear')
+                        if start_year is not None:
+                            start_year = int(start_year.text)
+                        # end_month = experiencerecord.find('EndMonth')
+
+                        end_year = experiencerecord.find('EndYear')
+                        if end_year is not None:
+                            end_year = int(end_year.text)
+
+                        company__persons.setdefault(company_name, []).append((resume_id, start_year, end_year))
+                        # company__persons.setdefault(company_name, []).append(resume_id)
+
+        links = []
+        for company, persons in company__persons.items():
+            for i in range(len(persons) - 1):
+                for j in range(i+1, len(persons)):
+                    id1, s1, e1 = persons[i]
+                    id2, s2, e2 = persons[j]
+                    if overlap(s1, e1, s2, e2):
+                        sys.stderr.write("link {}: {}-{}, {}-{}\n".format(company, s1, e1, s2, e2))
+                        links.append((id1, id2, company))
+
+        person_link_count = collections.Counter()
+        for id1, id2, company in links:
+            person_link_count[id1] += 1
+            person_link_count[id2] += 1
+        for pid, cnt in sorted(person_link_count.items(), key=lambda x: x[1], reverse=True)[:50]:
+            sys.stderr.write("person {}, deg {}\n".format(pid, cnt))
+
+        deg_company_tups = [(len(v), k) for k, v in company__persons.items()]
+        deg_company_tups.sort(reverse=True)
+
+        for deg, company in deg_company_tups[:50]:
+            sys.stderr.write("{} {}\n".format(company, deg))
+
+
+    if 1:
+
+        infile_name = sys.argv[1]
+
+        def print_kids(elt, elt__kids, indent=0):
+            delimit = '/'
+            if delimit in elt:
+                prefix, tag = elt.rsplit("/", 1)
+                print " "*indent, tag
+            else:
+                print " "*indent, elt
+
+            if elt in elt__kids:
+                for kid in sorted(elt__kids.get(elt, [])):
+                    print_kids(kid, elt__kids, indent + 4)
+
+        infile_name = sys.argv[1]
+        sys.stderr.write("parsing xml {}\n".format(infile_name))
+
+        elt__children = {}
+        schema_todo = {'resume'}
+        schema_done = set()
+
+        if infile_name.endswith('.gz'):
+            with gzip.open(infile_name, 'rb') as infile:
+                tree = ET.parse(infile)
+        else:
+            tree = ET.parse(infile_name)
+        root = tree.getroot()
+
+        while len(schema_todo) > 0:
+
+            elt_tag = schema_todo.pop()
+            elt__children[elt_tag] = set()
+            sys.stderr.write("exploring {}\n".format(elt_tag))
+
+            for i, elt in enumerate(root.findall(elt_tag)):
+                for elt_child in elt:
+                    elt_child_tag = elt_tag + '/' + elt_child.tag
+
+                    if (elt_child_tag not in schema_todo) and (elt_child not in schema_done):
+                        schema_todo.add(elt_child_tag)
+                    if elt_child_tag not in elt__children[elt_tag]:
+                        sys.stderr.write("\t found {}\n".format(elt_child_tag))
+                        elt__children[elt_tag].add(elt_child_tag)
+
+            schema_done.add(elt_tag)
+
+
+        print_kids("resume", elt__children)
+
+
+
+
+
 
 
