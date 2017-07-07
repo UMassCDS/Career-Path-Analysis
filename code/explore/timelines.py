@@ -134,6 +134,7 @@ def parse_timeline(resume):
     return sort_stints(stints)
 
 
+#zzz todo: this is broken with new format that includes description text
 def check_overlaps(timeline1, timeline2, exclude_dups=False):
     companies1 = set([ d for s, e, d in timeline1 ])
     companies2 = set([ d for s, e, d in timeline2 ])
