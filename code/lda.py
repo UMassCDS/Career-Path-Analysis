@@ -63,14 +63,14 @@ def print_top_words(components_norm, feature_names, n_words, n_topic=0):
             print "\t", word, ":\t", word_freq
 
 
-def flatten_descrip_seqs(job_desc_seqs):
+def flatten_descrip_seqs(timelines):
     data = []
     job_sequence_counts = []
     total_job_count = 0
-    for datum_idx, datum in enumerate(job_desc_seqs):
+    for t, jobs in enumerate(timelines):
         job_count = 0
-        for job_descr_indx, job_description in enumerate(datum):
-            data.append(' '.join(job_description))
+        for j, (start, end, company_name, desc) in enumerate(jobs):
+            data.append(' '.join(desc))
             job_count += 1
             total_job_count += 1
         if job_count != 0:
