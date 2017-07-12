@@ -1,5 +1,4 @@
 import sys
-import unidecode
 import string
 import datetime
 import gzip
@@ -37,7 +36,7 @@ def clean_name(s):
         try:
             clean = str(s)
         except UnicodeEncodeError:
-            clean = str(unidecode.unidecode(s))
+            clean = s.encode('ascii', 'ignore')
         clean = clean.lower().translate(string.maketrans("", ""), string.punctuation)
         return clean
     else:
