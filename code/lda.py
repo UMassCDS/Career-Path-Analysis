@@ -84,7 +84,7 @@ def flatten_descrip_seqs(timelines):
     return data
 
 
-def lda(job_descs, n_topics=200, n_words=15):
+def lda(job_descs, n_topics=200, n_jobs=16, n_words=15):
     """
     Runs the LDA algorithm, prints out the top 'n_words', and dumps the fitted LDA model to a
     pickled file.
@@ -135,7 +135,7 @@ def lda(job_descs, n_topics=200, n_words=15):
     # results.
     print '...Building LDA model.'
     lda_model = LatentDirichletAllocation(n_topics=n_topics, learning_method='batch',
-                                          evaluate_every=10, n_jobs=16, verbose=10)
+                                          evaluate_every=10, n_jobs=n_jobs, verbose=10)
 
     start_time = timeit.default_timer()
 
@@ -213,6 +213,8 @@ def lda(job_descs, n_topics=200, n_words=15):
 
 if __name__ == '__main__':
 
+    NUM_WORDS_PRINT = 20
+
     # n_words = raw_input('Enter number of words to print (default 15): ')
     # if n_words == '':
     #     n_words = 15
@@ -225,20 +227,20 @@ if __name__ == '__main__':
     # else:
     #     n_topics = int(n_topics)
 
-    USAGE = " usage: " + sys.argv[0] + " job_desc_seqs.p num_topics num_words"
+    USAGE = " usage: " + sys.argv[0] + " job_desc_seqs.p num_topics num_jobs"
     if len(sys.argv) < 4:
         sys.exit(USAGE)
 
     infile_name = sys.argv[1]
-    n_topics = int(sys.argv[2])
-    n_words = int(sys.argv[3])
+    num_topics = int(sys.argv[2])
+    num_jobs = int(sys.argv[3])
 
     with open(infile_name, 'rb') as infile:
         job_desc_seqs = p.load(infile)
 
     job_descs = flatten_descrip_seqs(job_desc_seqs)
 
-    lda(job_descs, n_topics, n_words)
+    lda(job_descs, num_topics, num_jobs, NUM_WORDS_PRINT)
 
 
 
