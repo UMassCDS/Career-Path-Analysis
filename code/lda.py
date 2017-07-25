@@ -60,7 +60,11 @@ def print_top_words(components_norm, feature_names, n_words, n_topic=0):
         for word_idx in word_indices_sorted[:n_words]:
             word = feature_names[word_idx]
             word_freq = topic[word_idx]
-            print "\t", word, ":\t", word_freq
+
+            try:
+                print "\t", word, ":\t", word_freq
+            except UnicodeEncodeError:
+                print "\t", word.encode('ascii', 'ignore'), ":\t", word_freq
 
 
 def flatten_descrip_seqs(timelines):
