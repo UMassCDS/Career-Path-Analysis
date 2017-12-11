@@ -6,7 +6,6 @@ Template for running LDA on job description corpus.
 
 # todo: add logging support
 
-from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 
 from build_dataset import build_dataset
@@ -73,6 +72,9 @@ def flatten_descrip_seqs(timelines):
     total_job_count = 0
     for t, jobs in enumerate(timelines):
         job_count = 0
+        # print "jobs: \n", jobs
+        # for j, job in enumerate(jobs):
+        #     print "\t", j, job
         for j, (start, end, company_name, desc) in enumerate(jobs):
             data.append(' '.join(desc))
             job_count += 1
@@ -85,10 +87,13 @@ def flatten_descrip_seqs(timelines):
     print 'number of job descriptions:', total_job_count
     print 'number of job description sequences:', len(job_sequence_counts)
     print '\n'
-    return data
+    return data, job_sequence_counts
 
 
-def lda(job_descs, n_topics=200, n_jobs=16, n_words=15):
+# def transform_descs_lda(job_desc_seqs, n_topics=200, n_jobs=16, n_words=15)
+
+
+def lda(job_desc_seqs, n_topics=200, n_jobs=16, n_words=15):
     """
     Runs the LDA algorithm, prints out the top 'n_words', and dumps the fitted LDA model to a
     pickled file.
@@ -124,6 +129,9 @@ def lda(job_descs, n_topics=200, n_jobs=16, n_words=15):
     # print 'number of job description sequences:', len(job_sequence_counts)
     # print '\n'
 
+
+    job_descs, job_seq_lens = flatten_descrip_seqs(job_desc_seqs)
+
     # Use tf (raw term count) features for LDA.
     print '...Extracting term frequency (bag of words) features for LDA.'
     tf_vectorizer = CountVectorizer()
@@ -146,10 +154,13 @@ def lda(job_descs, n_topics=200, n_jobs=16, n_words=15):
     # Fit model to data
     print '...Fitting LDA model to job description text.\n'
     fitted_data = lda_model.fit_transform(tf)
-    
+
+    # There are two probability distributions involved in LDA: topics over documents, and words
+    # over topics.  The first is what you get from .transform(), the second should be what you get
+    # from .components_
+
     # # save unique class labels for LDA topics
     # class_components = lda_model.components_
-
 
     # need to normalize to get probabilities, see:
     # https: // github.com / scikit - learn / scikit - learn / issues / 6353
@@ -171,10 +182,19 @@ def lda(job_descs, n_topics=200, n_jobs=16, n_words=15):
     # print '...Saving model.\n'
     # p.dump(lda_model, open('../models/lda_' + str(n_topics) + '_topics.p', 'wb'))
     
-    # # write fitted sequential data to pickle file
-    # print '...saving fitted sequential data.\n'
+    # write fitted sequential data to pickle file
+    print '...saving fitted sequential data.\n'
     # fitted_sequential_data = [ [ fitted_data[idx] for idx in xrange(job_count) ]
     #                                                 for job_count in job_sequence_counts ]
+    print "fitted data has ", len(fitted_data), " rows"
+    for r, row in enumerate(fitted_data[:5]):
+        print "{} ({}): {}".format(r, len(row), row)
+    # print fitted_data
+
+
+
+
+
     # print len(fitted_sequential_data)
     # print len([ job for datum in fitted_sequential_data for job in datum ])
     # p.dump([ [ fitted_data[idx] for idx in xrange(job_count) ]
@@ -242,9 +262,10 @@ if __name__ == '__main__':
     with open(infile_name, 'rb') as infile:
         job_desc_seqs = p.load(infile)
 
-    job_descs = flatten_descrip_seqs(job_desc_seqs)
+    # job_descs, job_seq_lens = flatten_descrip_seqs(job_desc_seqs)
+    # lda(job_descs, num_topics, num_jobs, NUM_WORDS_PRINT)
+    lda(job_desc_seqs, num_topics, num_jobs, NUM_WORDS_PRINT)
 
-    lda(job_descs, num_topics, num_jobs, NUM_WORDS_PRINT)
 
 
 

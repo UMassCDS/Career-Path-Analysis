@@ -2,12 +2,13 @@ import sys
 import string
 import datetime
 import gzip
-import pickle
 import xml.etree.ElementTree as ET
 
 import nltk
 import nltk.collocations
 from nltk.corpus import stopwords
+
+import resume_common
 
 
 BIGRAM_DELIM = '_'
@@ -62,56 +63,10 @@ def make_date(year_elt, month_elt):
             return None
 
 
-def sort_stints(stints):
-    # stints_filled = []
-    # for start, end, desc in stints:
-    #     if (start is None) and (end is None):
-    #         # stints_filled.append((start, end, desc))
-    #         pass
-    #     elif start is None:
-    #         stints_filled.append((end, end, desc))
-    #     elif end is None:
-    #         stints_filled.append((start, start, desc))
-    #     else:
-    #         stints_filled.append((start, end, desc))
-    # return sorted(stints_filled)
-    # sys.stderr.write("stints:      {}\n".format(stints))
+def parse_resume(resume_xml):
+    resume = []
 
-    stints_sorted = sorted([ s for s in stints if ((s[0] is not None) or (s[1] is not None)) ],
-                           key=lambda x: x[0] or x[1])
-    # sys.stderr.write("stints sort: {}\n".format(stints_sorted))
-
-    if len(stints_sorted) > 0:
-        # first start and last end are special cases
-        s, e, c, d = stints_sorted[0]
-        if s is None:
-            stints_sorted[0] = (e, e, c, d)
-        s, e, c, d = stints_sorted[-1]
-        if e is None:
-            stints_sorted[-1] = (s, s, c, d)
-
-        # now fill in the rest
-        all_dates = sorted([ s[0] for s in stints_sorted if s[0] is not None ] +
-                           [ s[1] for s in stints_sorted if s[1] is not None ])
-        stints_filled = []
-        for start, end, co, desc in stints_sorted:
-            if end is None:
-                ends = [ c for c in all_dates if c > start ]
-                end = ends[0] if len(ends) > 0 else start
-            elif start is None:
-                starts = [ c for c in all_dates if c < end ]
-                start = starts[-1] if len(starts) > 0 else end
-            stints_filled.append((start, end, co, desc))
-        # sys.stderr.write("stints fill: {}\n".format(stints))
-        stints_sorted = stints_filled
-
-    return stints_sorted
-
-
-def parse_timeline(resume):
-    stints = []
-
-    experience = resume.find('experience')
+    experience = resume_xml.find('experience')
     if experience is not None:
         for experiencerecord in experience:
             company_name = get_company_name(experiencerecord)
@@ -119,7 +74,7 @@ def parse_timeline(resume):
             end = make_date(experiencerecord.find('EndYear'), experiencerecord.find('EndMonth'))
             desc = get_description(experiencerecord)
 
-            stints.append((start, end, company_name, desc))
+            resume.append(resume_common.ResumeEntry(start, end, company_name, desc))
 
     # education = resume.find('education')
     # if education is not None:
@@ -130,7 +85,7 @@ def parse_timeline(resume):
     #         school = unidecode.unidecode("EDU " + school_id + " " + school_name)
     #         stints.append((None, grad_date, school))
 
-    return sort_stints(stints)
+    return resume_common.sort_stints(resume)
 
 
 #zzz todo: this is broken with new format that includes description text
@@ -156,7 +111,7 @@ def timeline2pretty(idx, timeline):
     return ret
 
 
-def xml2timelines(infile_names):
+def xml2resumes(infile_names):
     timelines = []
 
     for f, infile_name in enumerate(infile_names):
@@ -169,10 +124,10 @@ def xml2timelines(infile_names):
             tree = ET.parse(infile_name)
 
         root = tree.getroot()
-        for i, resume in enumerate(root.findall('resume')):
+        for i, resume_xml in enumerate(root.findall('resume')):
             if i % 1000 == 0:
                 sys.stderr.write("{}\n".format(i))
-            timeline = parse_timeline(resume)
+            timeline = parse_resume(resume_xml)
             # sys.stderr.write(timeline2pretty(resume.find('ResumeID').text, timeline) + "\n\n")
             if len(timeline) > 0:
                 timelines.append(timeline)
@@ -245,51 +200,61 @@ def replace_bigram(toks, bg):
     return toks_ret
 
 
-def clean_timeline_descs(timelines):
+def clean_resume_descs(resumes):
     stops = set(stopwords.words('english'))
-    bigrams = find_bigrams(timelines, num=1000, stops=stops)
+    bigrams = find_bigrams(resumes, num=1000, stops=stops)
     bigram_vals = { BIGRAM_DELIM.join(bg) for bg, s in bigrams }
     bigram__score = { bg:s for bg, s in bigrams }
 
-    sys.stderr.write("cleaning %d timelines\n" % len(timelines))
+    sys.stderr.write("cleaning %d resumes\n" % len(resumes))
+    resumes_clean = []
+    for i, resume_dirty in enumerate(resumes):
+        resume_clean = []
+        # for start, end, company_name, desc in resume_dirty:
+        #     desc_tokens = [ w.lower() for w in nltk.wordpunct_tokenize(desc) ]
+        #     desc_tokens_repl = replace_bigrams(desc_tokens, bigram__score)
+        #     desc_words = [ w for w in desc_tokens_repl if (w.isalpha() or (w in bigram_vals)) and
+        #                                                   (w not in stops) ]
 
-    timelines_clean = []
-    for i, timeline_dirty in enumerate(timelines):
-        timeline_clean = []
-        for start, end, company_name, desc in timeline_dirty:
-            desc_tokens = [ w.lower() for w in nltk.wordpunct_tokenize(desc) ]
+        # indexing by field name below might be slow, but it eases structural dependency with
+        # resume_common.py
+        for res_ent in resume_dirty:
+            desc_tokens = [ w.lower() for w in nltk.wordpunct_tokenize(res_ent.desc) ]
             desc_tokens_repl = replace_bigrams(desc_tokens, bigram__score)
             desc_words = [ w for w in desc_tokens_repl if (w.isalpha() or (w in bigram_vals)) and
                                                           (w not in stops) ]
-            timeline_clean.append((start, end, company_name, desc_words))
-        timelines_clean.append(timeline_clean)
+            desc_words_str = " ".join(desc_words)
+            resume_clean.append(resume_common.ResumeEntry(res_ent.start,
+                                                          res_ent.end,
+                                                          res_ent.company,
+                                                          desc_words_str))
+        resumes_clean.append(resume_clean)
 
         if (i % 1000) == 0:
-            sys.stderr.write("%d\t%s\n" % (i, str(timeline_dirty)))
-            sys.stderr.write("%d\t%s\n\n" % (i, str(timeline_clean)))
+            sys.stderr.write("%d\t%s\n" % (i, str(resume_dirty)))
+            sys.stderr.write("%d\t%s\n\n" % (i, str(resume_clean)))
 
-    return timelines_clean
+    return resumes_clean
 
 
 #####################################
 if __name__ == '__main__':
-    USAGE = " usage: " + sys.argv[0] + " infile0.tgz [infile1.tgz infile2.tgz ...] outfile.p"
+    USAGE = " usage: " + sys.argv[0] + " infile0.tgz [infile1.tgz infile2.tgz ...] outfile.json"
     if len(sys.argv) < 3:
         sys.exit(USAGE)
     ins = sys.argv[1:-1]
     out = sys.argv[-1]
 
     sys.stderr.write(str(ins) + "\n")
-    timelines = xml2timelines(ins)
-    sys.stderr.write("read {} timelines\n".format(len(timelines)))
+    resumes = xml2resumes(ins)
+    sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
-    timelines_clean = clean_timeline_descs(timelines)
-    sys.stderr.write("cleaned {} timelines\n".format(len(timelines_clean)))
+    resumes_clean = clean_resume_descs(resumes)
+    sys.stderr.write("cleaned {} resumes\n".format(len(resumes_clean)))
 
-    with open(out, 'wb') as outp:
-        pickle.dump(timelines_clean, outp)
-
-
+    # with open(out, 'wb') as outp:
+    #     pickle.dump(resumes_clean, outp)
+    resume_common.dump_json_file(resumes_clean, out)
 
 
     # # check for overlaps
