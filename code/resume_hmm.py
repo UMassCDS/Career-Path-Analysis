@@ -1,12 +1,13 @@
-import json
+import sys
 import math
 import numpy as np
+import resume_common as common
 
 NUM_STATES = 42
 
 
 class Resume(object):
-    def __init__(self, docs):
+    def __init__(self, docs):  # each job description is considered a document
         self.docs = docs
 
 
@@ -18,17 +19,19 @@ class Document(object):
     state_topic_counts = [][]  # when does this get initialized?
     state_topic_totals = []
 
-    def __init__(self):
+    def __init__(self, prev, next):
+        self.doc_prev = prev
+        self.doc_next = next
         self.state = None
         self.topic_distrib = []  # one entry per topic
 
-    def sample_state(self, doc_prev, doc_next):
+    def sample_state(self):
 
-        self.remove_from_trans_counts(doc_prev, doc_next)
+        self.remove_from_trans_counts()
 
         state_log_likes = [0.0]*NUM_STATES
         for s in range(NUM_STATES):
-            state_log_likes[s] = self.calc_state_state_log_like(s, doc_prev, doc_next) + \
+            state_log_likes[s] = self.calc_state_state_log_like(s, self.doc_prev, self.doc_next) + \
                                  self.calc_state_topic_log_like(s)
 
         # turn log likes into a distrib to sample from
@@ -37,7 +40,7 @@ class Document(object):
         state_new = np.random.choice(len(state_samp_distrib), p=state_samp_distrib)
         self.state = state_new
 
-        self.add_to_trans_counts(doc_prev, doc_next)
+        self.add_to_trans_counts()
         self.add_to_topic_counts()
 
     # double sum = 0.0;
@@ -79,19 +82,19 @@ class Document(object):
             Document.state_topic_counts[self.state][topic] += topic_count
         Document.state_topic_totals[self.state] += self.length
 
-    def add_to_trans_counts(self, doc_prev, doc_next):
-        if doc_prev is None:  # beginning of resume sequence
+    def add_to_trans_counts(self):
+        if self.doc_prev is None:  # beginning of resume sequence
             Document.start_state_counts[self.state] += 1
 
-            if doc_next is not None:  # not a singleton sequence
-                Document.state_state_trans[self.state][doc_next.state] += 1
+            if self.doc_next is not None:  # not a singleton sequence
+                Document.state_state_trans[self.state][self.doc_next.state] += 1
                 Document.state_trans_tots[self.state] += 1
 
         else:  # middle of sequence
-            Document.state_state_trans[doc_prev.state][self.state] += 1
+            Document.state_state_trans[self.doc_prev.state][self.state] += 1
 
-            if doc_next is not None:  # not the end of sequence
-                Document.state_state_trans[self.state][doc_next.state] += 1
+            if self.doc_next is not None:  # not the end of sequence
+                Document.state_state_trans[self.state][self.doc_next.state] += 1
                 Document.state_trans_tots[self.state] += 1
 
 
@@ -158,30 +161,30 @@ class Document(object):
                 Document.state_trans_tots[self.state] -= 1
 
 
-    def calc_state_state_log_like(self, s, doc_prev, doc_next):
+    def calc_state_state_log_like(self, s):
 
-        if doc_prev is None:  # beginning of resume sequence
+        if self.doc_prev is None:  # beginning of resume sequence
             lik = (Document.start_state_counts[s] + pi) / (numSequences - 1 + sumPI)
 
-            if doc_next is not None:  # not a singleton sequence
-                lik *= Document.state_state_trans[s][doc_next.state] + gamma
+            if self.doc_next is not None:  # not a singleton sequence
+                lik *= Document.state_state_trans[s][self.doc_next.state] + gamma
 
         else:  # middle of sequence
-            if doc_next is None:  # end of sequence
-                lik = (Document.state_state_trans[doc_prev.state][s] + gamma)
+            if self.doc_next is None:  # end of sequence
+                lik = (Document.state_state_trans[self.doc_prev.state][s] + gamma)
             else:
-                if (doc_prev.state == s) and (s == doc_next.state):
-                    lik = ((Document.state_state_trans[doc_prev.state][s] + gamma) *
-                           (Document.state_state_trans[s][doc_next.state] + 1 + gamma) /
+                if (self.doc_prev.state == s) and (s == self.doc_next.state):
+                    lik = ((Document.state_state_trans[self.doc_prev.state][s] + gamma) *
+                           (Document.state_state_trans[s][self.doc_next.state] + 1 + gamma) /
                            (Document.state_trans_tots[s] + 1 + gammaSum))
 
-                elif (doc_prev.state == s): # and (s != doc_next.state):
-                    lik = ((Document.state_state_trans[doc_prev.state][s] + gamma) *
-                           (Document.state_state_trans[s][doc_next.state] + gamma) /
+                elif (self.doc_prev.state == s): # and (s != doc_next.state):
+                    lik = ((Document.state_state_trans[self.doc_prev.state][s] + gamma) *
+                           (Document.state_state_trans[s][self.doc_next.state] + gamma) /
                            (Document.state_trans_tots[s] + 1 + gammaSum))
                 else: # (doc_prev.state != s)
-                    lik = ((Document.state_state_trans[doc_prev.state][s] + gamma) *
-                           (Document.state_state_trans[s][doc_next.state] + gamma) /
+                    lik = ((Document.state_state_trans[self.doc_prev.state][s] + gamma) *
+                           (Document.state_state_trans[s][self.doc_next.state] + gamma) /
                            (Document.state_trans_tots[s] + gammaSum))
         return math.log(lik)
 
@@ -225,11 +228,11 @@ class Document(object):
     #     }
     #
 
-def load_docs_json(infile_name):
-    with open(infile_name, 'r') as infile:
-        docs_all = json.load(infile)
-    resumes = [ Resume(seq) for seq in docs_all ]
-    return resumes
+# def load_docs_json(infile_name):
+#     with open(infile_name, 'r') as infile:
+#         docs_all = json.load(infile)
+#     resumes = [ Resume(seq) for seq in docs_all ]
+#     return resumes
 
 
 def sample_states(iterations, docs):
@@ -239,4 +242,18 @@ def sample_states(iterations, docs):
         for doc in docs:
 
             doc.sample_state()
+
+##########################################
+if __name__ == '__main__':
+    USAGE = "heya"
+
+    resumes = common.load_json_file(sys.argv[1])  # gives us a list of lists of ResumeEntry
+
+
+
+
+
+
+
+
 
