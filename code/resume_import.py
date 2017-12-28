@@ -2,6 +2,7 @@ import sys
 import string
 import datetime
 import gzip
+import json
 import xml.etree.ElementTree as ET
 
 import nltk
@@ -237,6 +238,18 @@ def clean_resume_descs(resumes):
     return resumes_clean
 
 
+# Even though we only use dump() here, define them together so they stay in sync
+def dump_json_resumes(resumes, outfile_name):
+    with open(outfile_name, 'w') as outfile:
+        json.dump([ [ resume_common.tuplify(r) for r in resume ] for resume in resumes ], outfile)
+
+
+def load_json_resumes(infile_name):
+    with open(infile_name, 'r') as infile:
+        resume_tups = json.load(infile)
+    return [ [ resume_common.detuplify(r) for r in resume_tup ] for resume_tup in resume_tups ]
+
+
 #####################################
 if __name__ == '__main__':
     USAGE = " usage: " + sys.argv[0] + " infile0.tgz [infile1.tgz infile2.tgz ...] outfile.json"
@@ -254,7 +267,7 @@ if __name__ == '__main__':
 
     # with open(out, 'wb') as outp:
     #     pickle.dump(resumes_clean, outp)
-    resume_common.dump_json_file(resumes_clean, out)
+    dump_json_resumes(resumes_clean, out)
 
 
     # # check for overlaps

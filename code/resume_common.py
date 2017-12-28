@@ -54,17 +54,6 @@ def detuplify(res_tup):
                        c, d)
 
 
-def dump_json_file(resumes, outfile_name):
-    with open(outfile_name, 'w') as outfile:
-        json.dump([ [ tuplify(r) for r in resume ] for resume in resumes ], outfile)
-
-
-def load_json_file(infile_name):
-    with open(infile_name, 'r') as infile:
-        resume_tups = json.load(infile)
-    return [ [ detuplify(r) for r in resume_tup ] for resume_tup in resume_tups ]
-
-
 # def transform_descs_vector(resume_list):
 #     descs, job_sequence_counts = get_descs_flat(resume_list)
 #     termfreq_vectorizer = CountVectorizer()
