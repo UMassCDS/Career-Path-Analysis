@@ -51,7 +51,11 @@ def unflatten(flat_list, sublist_lens):
     rets = []
     idx = 0
     for sublist_len in sublist_lens:
-        rets.append(flat_list[idx:(idx+sublist_len)].tolist())
+        try:
+            ret = flat_list[idx:(idx+sublist_len)].tolist()
+        except AttributeError:
+            ret = flat_list[idx:(idx+sublist_len)]
+        rets.append(ret)
         idx += sublist_len
     return rets
 
@@ -82,8 +86,8 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
                                       random_init=False)
 
     print "job_descs_lda shape: ", job_descs_lda.shape
-    for lda_distrib in job_descs_lda[:10]:
-        print lda_distrib, ", sum=", sum(lda_distrib), [d*len(desc.split()) for d in lda_distrib], len(desc.split()), desc, "\n"
+    # for lda_distrib in job_descs_lda[:10]:
+    #     print lda_distrib, ", sum=", sum(lda_distrib), [d*len(desc.split()) for d in lda_distrib], len(desc.split()), desc, "\n"
 
     jobs_lda = zip(jobs, job_descs_lda)
     jobs_lda_seq = unflatten(jobs_lda, job_sequence_counts)
@@ -107,7 +111,7 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
 # Even though we only use dump() here, define them together so they stay in sync
 def dump_json_resumes_lda(resumes, outfile_name):
     with open(outfile_name, 'w') as outfile:
-        out = [ [ [resume_common.tuplify(e), lda] for e, lda in resume ] for resume in resumes ]
+        out = [ [ [resume_common.tuplify(e), lda.tolist()] for e, lda in resume ] for resume in resumes ]
         json.dump(out, outfile)
 
 
