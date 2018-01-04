@@ -3,6 +3,7 @@ import math
 import argparse
 import json
 import datetime
+import os
 import os.path
 import numpy as np
 from resume_lda import load_json_resumes_lda
@@ -40,10 +41,11 @@ class ResumeHMM(object):
     #     self.init_doc_states(docs)
     #     self.sample_doc_states(docs, save_dir, iters, iters_lag, )
 
-    def fit(self, docs, save_dir, iters, iters_lag):
-        # noinspection PyPep8,PyPep8
+    def fit(self, docs, save_dir, iters, iters_lag, erase=False):
         self.num_sequences = len([ d for d in docs if d.doc_prev is None ])
 
+        if erase:
+            self.delete_progress(save_dir)
         if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
             i = self.load_progress(docs, save_dir)
             self.sample_doc_states(docs, save_dir, iters, iters_lag, start_iter=i+1)
@@ -113,10 +115,23 @@ class ResumeHMM(object):
         else:
             sys.exit("unequal iter counts loaded")
 
+    def delete_progress(self, save_dir):
+        del_count = 0
+        for fname in [OUT_PARAMS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
+            try:
+                path = os.path.join(save_dir, fname)
+                os.remove(path)
+                sys.stderr.write("removed " + path + "\n")
+                del_count += 1
+            except OSError:
+                continue
+        return del_count
+
     def sample_doc_states(self, docs, save_dir, iterations, lag_iters, start_iter=0):
         for i in range(start_iter, iterations):
             for d, doc in enumerate(docs):
-                print "iter ", i, ", doc ", d
+                if d % 500 == 0:
+                    print "iter ", i, ", doc ", d
                 self.remove_from_trans_counts(doc)
 
                 # doc.state = self.sample_doc_state(doc)
@@ -128,7 +143,6 @@ class ResumeHMM(object):
 
                 self.add_to_trans_counts(doc)
                 self.add_to_topic_counts(doc)
-                print ""
 
             if i % lag_iters == 0:
                 self.save_progress(i, docs, save_dir)
@@ -187,23 +201,23 @@ class ResumeHMM(object):
     def calc_state_state_log_like(self, doc, s):
         trace = ""
         if doc.doc_prev is None:  # beginning of resume sequence
-            trace += "begin "
+            # trace += "begin "
             lik = (self.start_counts[s] + self.pi) / (self.num_sequences - 1 + self.sum_pi)
-            trace += "({} + {}) / ({} - 1 + {}) = {}".format(self.start_counts[s], self.pi,
-                                                             self.num_sequences, self.sum_pi,
-                                                             lik)
+            # trace += "({} + {}) / ({} - 1 + {}) = {}".format(self.start_counts[s], self.pi,
+            #                                                  self.num_sequences, self.sum_pi,
+            #                                                  lik)
             if doc.doc_next is not None:  # not a singleton sequence
-                trace += "cont "
-                print "state ", s, " doc_next.state ", doc.doc_next.state
+                # trace += "cont "
+                # print "state ", s, " doc_next.state ", doc.doc_next.state
                 lik *= self.state_trans[s][doc.doc_next.state] + self.gamma
 
         else:  # middle of sequence
-            trace += "middle "
+            # trace += "middle "
             if doc.doc_next is None:  # end of sequence
                 lik = (self.state_trans[doc.doc_prev.state][s] + self.gamma)
-                trace += "end "
+                # trace += "end "
             else:
-                trace += "cont "
+                # trace += "cont "
                 if (doc.doc_prev.state == s) and (s == doc.doc_next.state):
                     lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
                            (self.state_trans[s][doc.doc_next.state] + 1 + self.gamma) /
@@ -217,7 +231,7 @@ class ResumeHMM(object):
                     lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
                            (self.state_trans[s][doc.doc_next.state] + self.gamma) /
                            (self.state_trans_tots[s] + self.sum_gamma))
-        print "lik for state ", s, "(", trace, ")", ": ", lik
+        # print "lik for state ", s, "(", trace, ")", ": ", lik
         return math.log(lik)
 
     # todo: make this function cache itself
@@ -306,7 +320,7 @@ def get_docs_from_resumes(resume_list):
 
 def append_to_file(file_name, elts):
     with open(file_name, 'a') as out:
-        out.write("\t".join(elts) + "\n")
+        out.write("\t".join([ str(e) for e in elts ]) + "\n")
 
 
 def read_last_line(file_name):
@@ -328,6 +342,7 @@ if __name__ == '__main__':
     parser.add_argument('--pi', type=float, default=1000.0)
     parser.add_argument('--gamma', type=float, default=1.0)
     parser.add_argument('--lag', type=int, default=10)
+    parser.add_argument('--erase', action='store_true')
 
     args = parser.parse_args()
 
@@ -339,4 +354,4 @@ if __name__ == '__main__':
     hmm = ResumeHMM(args.num_states, args.pi, args.gamma, num_tops)
     # hmm.init_doc_states(resume_docs)
     # hmm.sample_doc_states(resume_docs, args.num_iters)
-    hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag)
+    hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
