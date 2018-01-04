@@ -76,7 +76,9 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
                                           learning_method='batch',
                                           evaluate_every=10,
                                           n_jobs=n_jobs,
-                                          verbose=10)
+                                          verbose=10,
+                                          doc_topic_prior=0.0,
+                                          topic_word_prior=0.0)
     if normalized:
         job_descs_lda = lda_model.fit_transform(job_descs_vectored)
     else:
@@ -84,6 +86,9 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
         job_descs_lda, _ = lda_model._e_step(job_descs_vectored,
                                       cal_sstats=False,
                                       random_init=False)
+
+    for d, (desc, lda) in enumerate(zip(job_descs, job_descs_lda)):
+        print "lda_topic_distrib", d, sum(lda), len(desc.split()), ": ", lda
 
     print "job_descs_lda shape: ", job_descs_lda.shape
     # for lda_distrib in job_descs_lda[:10]:
