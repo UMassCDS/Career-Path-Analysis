@@ -3,10 +3,14 @@ import math
 import argparse
 import json
 import datetime
+import logging
 import os
 import os.path
 import numpy as np
 from resume_lda import load_json_resumes_lda
+
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
 OUT_PARAMS = 'params.tsv'
@@ -128,11 +132,21 @@ class ResumeHMM(object):
         return del_count
 
     def sample_doc_states(self, docs, save_dir, iterations, lag_iters, start_iter=0):
+        timing_iters = 10  # calc a moving average of time per iter over this many
+        timing_start = datetime.datetime.now()
+
         for i in range(start_iter, iterations):
+            logging.debug("iter {}".format(i))
+            if i % timing_iters == 0:
+                ts_now = datetime.datetime.now()
+                logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
+                timing_start = ts_now
+
             for d, doc in enumerate(docs):
                 if d % 500 == 0:
-                    print "iter ", i, ", doc ", d
+                    logging.debug("iter {}, doc {}".format(i, d))
                 self.remove_from_trans_counts(doc)
+                self.remove_from_topic_counts(doc)
 
                 # doc.state = self.sample_doc_state(doc)
                 state_log_likes = [0.0] * self.num_states
@@ -168,18 +182,6 @@ class ResumeHMM(object):
     #                              self.calc_state_topic_log_like(doc, s)
     #     state_new = sample_from_loglikes(state_log_likes)
     #     return state_new
-
-    def remove_from_trans_counts(self, doc):
-        if doc.doc_prev is None:  # beginning of resume sequence
-            self.start_counts[doc.state] -= 1
-            if doc.doc_next is not None:  # not a singleton sequence
-                self.state_trans[doc.state][doc.doc_next.state] -= 1
-                self.state_trans_tots[doc.state] -= 1
-        else:  # middle of sequence
-            self.state_trans[doc.doc_prev.state][doc.state] -= 1
-            if doc.doc_next is not None:  # not end of sequence
-                self.state_trans[doc.state][doc.doc_next.state] -= 1
-                self.state_trans_tots[doc.state] -= 1
 
     def init_state_log_like(self, doc, s):
         # this  is just like calc_state_state_log_like(), except we don't have access to
@@ -234,23 +236,52 @@ class ResumeHMM(object):
         # print "lik for state ", s, "(", trace, ")", ": ", lik
         return math.log(lik)
 
-    # todo: make this function cache itself
+    # # todo: make this function cache itself
+    # def calc_state_topic_log_like(self, doc, state):
+    #     ret = 0.0
+    #     for topic, topic_count_float in enumerate(doc.topic_distrib):
+    #         topic_count = int(round(topic_count_float))
+    #         log_gammas = [0.0]
+    #         for i in range(1, topic_count + 1):
+    #             log_gammas.append(log_gammas[i-1] +
+    #                               math.log(self.alphas[topic] + i - 1 +
+    #                                        self.state_topic_counts[state][topic]))
+    #         ret += log_gammas[topic_count]
+    #
+    #     log_gammas = [0.0]
+    #     for i in range(1, doc.length + 1):
+    #         log_gammas.append(log_gammas[i-1] +
+    #                           math.log(self.sum_alpha + i - 1 + self.state_topic_totals[state]))
+    #     ret -= log_gammas[doc.length]
+    #     return ret
+
+    # todo: when do we have to wipe out the cache?  what changes when to make it stale?
+    topic_gamma_memo = {}  # (state, topic) => [ count ]
+    doc_gamma_memo = {}
+
     def calc_state_topic_log_like(self, doc, state):
         ret = 0.0
         for topic, topic_count_float in enumerate(doc.topic_distrib):
             topic_count = int(round(topic_count_float))
-            log_gammas = [0.0]
-            for i in range(1, topic_count + 1):
-                log_gammas.append(log_gammas[i-1] +
-                                  math.log(self.alphas[topic] + i - 1 +
-                                           self.state_topic_counts[state][topic]))
-            ret += log_gammas[topic_count]
+            memo_key = (state, topic, topic_count)
+            if memo_key not in self.topic_gamma_memo:
+                log_gammas = [0.0]
+                for i in range(1, topic_count + 1):
+                    log_gammas.append(log_gammas[i-1] +
+                                      math.log(self.alphas[topic] + i - 1 +
+                                               self.state_topic_counts[state][topic]))
+                self.topic_gamma_memo[memo_key] = log_gammas[topic_count]
+            ret += self.topic_gamma_memo[memo_key]
 
-        log_gammas = [0.0]
-        for i in range(1, doc.length + 1):
-            log_gammas.append(log_gammas[i-1] +
-                              math.log(self.sum_alpha + i - 1 + self.state_topic_totals[state]))
-        ret -= log_gammas[doc.length]
+        memo_key = (state, doc.length)
+        if memo_key not in self.doc_gamma_memo:
+            log_gammas = [0.0]
+            for i in range(1, doc.length + 1):
+                log_gammas.append(log_gammas[i-1] +
+                                  math.log(self.sum_alpha + i - 1 + self.state_topic_totals[state]))
+            self.doc_gamma_memo[memo_key] = log_gammas[doc.length]
+        ret -= self.doc_gamma_memo[memo_key]
+
         return ret
 
     def add_to_trans_counts(self, doc):
@@ -268,10 +299,28 @@ class ResumeHMM(object):
                 self.state_trans[doc.state][doc.doc_next.state] += 1
                 self.state_trans_tots[doc.state] += 1
 
+    def remove_from_trans_counts(self, doc):
+        if doc.doc_prev is None:  # beginning of resume sequence
+            self.start_counts[doc.state] -= 1
+            if doc.doc_next is not None:  # not a singleton sequence
+                self.state_trans[doc.state][doc.doc_next.state] -= 1
+                self.state_trans_tots[doc.state] -= 1
+        else:  # middle of sequence
+            self.state_trans[doc.doc_prev.state][doc.state] -= 1
+            if doc.doc_next is not None:  # not end of sequence
+                self.state_trans[doc.state][doc.doc_next.state] -= 1
+                self.state_trans_tots[doc.state] -= 1
+
     def add_to_topic_counts(self, doc):
         for topic, topic_count in enumerate(doc.topic_distrib):
             self.state_topic_counts[doc.state][topic] += topic_count
-            self.state_topic_totals[doc.state] += doc.length
+        self.state_topic_totals[doc.state] += doc.length
+
+    def remove_from_topic_counts(self, doc):
+        for topic, topic_count in enumerate(doc.topic_distrib):
+            self.state_topic_counts[doc.state][topic] -= topic_count
+        self.state_topic_totals[doc.state] -= doc.length
+
 
 
 class Document(object):
