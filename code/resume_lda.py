@@ -77,8 +77,8 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
                                           evaluate_every=10,
                                           n_jobs=n_jobs,
                                           verbose=10,
-                                          doc_topic_prior=0.0,
-                                          topic_word_prior=0.0)
+                                          doc_topic_prior=None,
+                                          topic_word_prior=None)
     if normalized:
         job_descs_lda = lda_model.fit_transform(job_descs_vectored)
     else:
