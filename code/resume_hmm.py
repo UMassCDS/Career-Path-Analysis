@@ -60,7 +60,7 @@ class ResumeHMM(object):
             state_log_likes = [0.0] * self.num_states
             for s in range(self.num_states):
                 state_log_likes[s] = self.init_state_log_like(doc, s) + \
-                                     self.calc_state_topic_log_like(doc, s)
+                                     self.calc_state_topic_log_like_arr(doc, s)
             doc.state = sample_from_loglikes(state_log_likes)
 
             self.init_trans_counts(doc)
@@ -145,7 +145,8 @@ class ResumeHMM(object):
                 self.remove_from_trans_counts(doc)
                 self.remove_from_topic_counts(doc)
 
-                state_log_likes = [0.0] * self.num_states
+                # state_log_likes = [0.0] * self.num_states
+                state_log_likes = np.zeros(self.num_states)
                 for s in range(self.num_states):
                     state_log_likes[s] = self.calc_state_state_log_like(doc, s)
                     state_log_likes[s] += self.calc_state_topic_log_like_arr(doc, s)
@@ -204,6 +205,7 @@ class ResumeHMM(object):
                     lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
                            (self.state_trans[s][doc.doc_next.state] + self.gamma) /
                            (self.state_trans_tots[s] + 1 + self.sum_gamma))
+
                 else:  # (doc_prev.state != s)
                     lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
                            (self.state_trans[s][doc.doc_next.state] + self.gamma) /
@@ -276,10 +278,15 @@ class Document(object):
 
 def sample_from_loglikes(state_log_likes):
     # turn log likes into a distrib to sample from
-    state_log_like_max = max(state_log_likes)
-    state_likes_divmax = [ math.exp(loglik - state_log_like_max) for loglik in state_log_likes ]
-    norm = sum(state_likes_divmax)
-    state_samp_distrib = [ lik/norm for lik in state_likes_divmax ]
+    # state_log_like_max = max(state_log_likes)
+    # state_likes_divmax = [ math.exp(loglik - state_log_like_max) for loglik in state_log_likes ]
+    # norm = sum(state_likes_divmax)
+    # state_samp_distrib = [ lik/norm for lik in state_likes_divmax ]
+    # state_new = np.random.choice(len(state_samp_distrib), p=state_samp_distrib)
+    state_log_like_max = np.max(state_log_likes)
+    state_likes_divmax = np.exp(state_log_likes - state_log_like_max)
+    norm = np.sum(state_likes_divmax)
+    state_samp_distrib = state_likes_divmax/norm
     state_new = np.random.choice(len(state_samp_distrib), p=state_samp_distrib)
     return state_new
 
