@@ -9,6 +9,7 @@ import os.path
 import numpy as np
 from resume_lda import load_json_resumes_lda
 
+import scipy.special
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -32,11 +33,11 @@ class ResumeHMM(object):
         self.state_trans = [[0]*num_states]*num_states
         self.state_trans_tots = [0]*num_states
 
-        self.state_topic_counts = [[0]*num_topics]*num_states
+        self.state_topic_counts = [np.array([0]*num_topics)]*num_states
         self.state_topic_totals = [0]*num_states
 
         self.sum_alpha = num_topics
-        self.alphas = [self.sum_alpha/num_topics]*num_topics  #zzz Why do it this way? It's 1.0!
+        self.alphas = np.array([self.sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
 
         self.num_sequences = None  # needed for denominator of likelihood, set in fit() below
 
@@ -78,7 +79,7 @@ class ResumeHMM(object):
             "num_states": self.num_states,
             "pi": self.pi,
             "gamma": self.gamma,
-            "alphas": self.alphas,
+            "alphas": self.alphas.tolist(),
             "num_sequences": self.num_sequences,
         }
         json_str = json.dumps(params)
@@ -88,7 +89,7 @@ class ResumeHMM(object):
         json_str = json.dumps(self.state_trans)
         append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
 
-        json_str = json.dumps(self.state_topic_counts)
+        json_str = json.dumps([ s.tolist() for s in self.state_topic_counts ])
         append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
 
         json_str = json.dumps([doc.state for doc in docs])
@@ -145,18 +146,49 @@ class ResumeHMM(object):
             for d, doc in enumerate(docs):
                 if d % 500 == 0:
                     logging.debug("iter {}, doc {}".format(i, d))
+
+                # state_trans_tots_audit = debug_audit_state_trans_tots(docs)
+                # if self.state_trans_tots != state_trans_tots_audit:
+                #     logging.debug("out of sync:")
+                #     logging.debug("{} {}".format(self.state_trans_tots, sum(self.state_trans_tots)))
+                #     logging.debug("{} {}".format(state_trans_tots_audit, sum(state_trans_tots_audit)))
+                #
+                # if (doc.doc_next is not None) or (doc.doc_prev is not None):
+                #     logging.debug("iter {}, doc {} state_trans_tots bef: {} {}".format(i, d, self.state_trans_tots,
+                #                                                   sum(self.state_trans_tots)))
+
                 self.remove_from_trans_counts(doc)
                 self.remove_from_topic_counts(doc)
 
                 # doc.state = self.sample_doc_state(doc)
                 state_log_likes = [0.0] * self.num_states
                 for s in range(self.num_states):
-                    state_log_likes[s] = self.calc_state_state_log_like(doc, s) + \
-                                         self.calc_state_topic_log_like(doc, s)
+                    # state_log_likes[s] = self.calc_state_state_log_like(doc, s) + \
+                    #                      self.calc_state_topic_log_like(doc, s)
+
+                    state_log_likes[s] = self.calc_state_state_log_like(doc, s)
+                    # state_log_likes[s] += self.calc_state_topic_log_like(doc, s)
+                    state_log_likes[s] += self.calc_state_topic_log_like_arr(doc, s)
+
+                old_state = doc.state
                 doc.state = sample_from_loglikes(state_log_likes)
+
+                # if (doc.doc_next is not None) or (doc.doc_prev is not None):
+                #     logging.debug("old state: {} => new state: {}, prev: {}, next: {}".format(old_state,
+                #                                                                           doc.state,
+                #                                                                           doc.doc_prev,
+                #                                                                           doc.doc_next))
 
                 self.add_to_trans_counts(doc)
                 self.add_to_topic_counts(doc)
+
+                # if (doc.doc_next is not None) or (doc.doc_prev is not None):
+                #     logging.debug("iter {}, doc {} state_trans_tots aft: {} {}".format(i, d, self.state_trans_tots,
+                #                                                   sum(self.state_trans_tots)))
+                #
+                # logging.debug(" ")
+
+
 
             if i % lag_iters == 0:
                 self.save_progress(i, docs, save_dir)
@@ -197,8 +229,9 @@ class ResumeHMM(object):
             self.start_counts[doc.state] += 1
         else:  # middle of sequence
             self.state_trans[doc.doc_prev.state][doc.state] += 1
-            if doc.doc_next is not None:  # not the end of sequence
-                self.state_trans_tots[doc.state] += 1
+
+        if doc.doc_next is not None:  # not the end of sequence
+            self.state_trans_tots[doc.state] += 1
 
     def calc_state_state_log_like(self, doc, s):
         trace = ""
@@ -230,14 +263,24 @@ class ResumeHMM(object):
                            (self.state_trans[s][doc.doc_next.state] + self.gamma) /
                            (self.state_trans_tots[s] + 1 + self.sum_gamma))
                 else:  # (doc_prev.state != s)
-                    lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
-                           (self.state_trans[s][doc.doc_next.state] + self.gamma) /
-                           (self.state_trans_tots[s] + self.sum_gamma))
+                    try:
+                        lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
+                               (self.state_trans[s][doc.doc_next.state] + self.gamma) /
+                               (self.state_trans_tots[s] + self.sum_gamma))
+                    except ZeroDivisionError:
+                        print "lik = (({} + {}) * ({} + {}) / ({} + {}))".format(self.state_trans[doc.doc_prev.state][s],
+                                                                                 self.gamma,
+                                                                                 self.state_trans[s][doc.doc_next.state],
+                                                                                 self.gamma,
+                                                                                 self.state_trans_tots[s],
+                                                                                 self.sum_gamma)
+                        sys.exit("zzz")
+
         # print "lik for state ", s, "(", trace, ")", ": ", lik
         return math.log(lik)
 
-    # # todo: make this function cache itself
-    # def calc_state_topic_log_like(self, doc, state):
+    # # # todo: make this function cache itself
+    # def calc_state_topic_log_like_uncached(self, doc, state):
     #     ret = 0.0
     #     for topic, topic_count_float in enumerate(doc.topic_distrib):
     #         topic_count = int(round(topic_count_float))
@@ -255,34 +298,141 @@ class ResumeHMM(object):
     #     ret -= log_gammas[doc.length]
     #     return ret
 
+    # # this one caches
     # todo: when do we have to wipe out the cache?  what changes when to make it stale?
-    topic_gamma_memo = {}  # (state, topic) => [ count ]
-    doc_gamma_memo = {}
+    # topic_gamma_memo = {}  # (state, topic) => [ count ]
+    # doc_gamma_memo = {}
+    # def calc_state_topic_log_like(self, doc, state):
+    #     ret = 0.0
+    #     # for topic, topic_count_float in enumerate(doc.topic_distrib):
+    #     #     topic_count = int(round(topic_count_float))
+    #     for topic, topic_count in enumerate(doc.topic_distrib):
+    #         state_topic = (state, topic)
+    #
+    #         cached_topic_gammas = self.topic_gamma_memo.setdefault(state_topic, [0.0])
+    #         if len(cached_topic_gammas) <= topic_count:
+    #             for i in range(len(cached_topic_gammas), topic_count + 1):
+    #                 cached_topic_gammas.append(cached_topic_gammas[i-1] +
+    #                                      math.log(self.alphas[topic] + i - 1 +
+    #                                               self.state_topic_counts[state][topic]))
+    #         ret += cached_topic_gammas[topic_count]
+    #
+    #
+    #     cached_doc_gammas = self.doc_gamma_memo.setdefault(state, [0.0])
+    #     if len(cached_doc_gammas) <= doc.length:
+    #         for i in range(len(cached_doc_gammas), doc.length + 1):
+    #             cached_doc_gammas.append(cached_doc_gammas[i-1] +
+    #                                      math.log(self.sum_alpha + i - 1 +
+    #                                               self.state_topic_totals[state]))
+    #     ret -= cached_doc_gammas[doc.length]
+    #
+    #     return ret
+
+    # # this one caches keyed by three values
+    # def calc_state_topic_log_like(self, doc, state):
+    #     ret = 0.0
+    #     for topic, topic_count_float in enumerate(doc.topic_distrib):
+    #         topic_count = int(round(topic_count_float))
+    #         memo_key = (state, topic, topic_count)
+    #         if memo_key not in self.topic_gamma_memo:
+    #             log_gammas = [0.0]
+    #             for i in range(1, topic_count + 1):
+    #                 log_gammas.append(log_gammas[i-1] +
+    #                                   math.log(self.alphas[topic] + i - 1 +
+    #                                            self.state_topic_counts[state][topic]))
+    #             self.topic_gamma_memo[memo_key] = log_gammas[topic_count]
+    #         ret += self.topic_gamma_memo[memo_key]
+    #
+    #     memo_key = (state, doc.length)
+    #     if memo_key not in self.doc_gamma_memo:
+    #         log_gammas = [0.0]
+    #         for i in range(1, doc.length + 1):
+    #             log_gammas.append(log_gammas[i-1] +
+    #                               math.log(self.sum_alpha + i - 1 + self.state_topic_totals[state]))
+    #         self.doc_gamma_memo[memo_key] = log_gammas[doc.length]
+    #     ret -= self.doc_gamma_memo[memo_key]
+    #
+    #     return ret
+
+    # this one makes calls direct
+    topic_gamma_memo = {}  # (state, topic, count) => lgam
+    doc_gamma_memo = {}  # (state, len) => lgam
+
+    # def calc_state_topic_log_like(self, doc, state):
+    #     ret = 0.0
+    #     for topic, topic_count_float in enumerate(doc.topic_distrib):
+    #         # memo_key = (state, topic, topic_count_float)
+    #         memo_key = (self.alphas[topic], self.state_topic_counts[state][topic], topic_count_float)
+    #         lgam = self.topic_gamma_memo.get(memo_key)
+    #         if lgam is None:
+    #             lgam = math.lgamma(self.alphas[topic] +
+    #                                self.state_topic_counts[state][topic] +
+    #                                topic_count_float) - \
+    #                    math.lgamma(self.alphas[topic] + self.state_topic_counts[state][topic])
+    #             self.topic_gamma_memo[memo_key] = lgam
+    #         ret += lgam
+    #
+    #     # memo_key = (state, doc.length)
+    #     memo_key = (self.sum_alpha, self.state_topic_totals[state], doc.length)
+    #     lgam = self.topic_gamma_memo.get(memo_key)
+    #     if lgam is None:
+    #         lgam = math.lgamma(self.sum_alpha + self.state_topic_totals[state] + doc.length) -\
+    #                math.lgamma(self.sum_alpha + self.state_topic_totals[state])
+    #         self.doc_gamma_memo[memo_key] = lgam
+    #     ret -= lgam  # note the minus!
+    #     return ret
 
     def calc_state_topic_log_like(self, doc, state):
         ret = 0.0
-        for topic, topic_count_float in enumerate(doc.topic_distrib):
-            topic_count = int(round(topic_count_float))
-            memo_key = (state, topic, topic_count)
-            if memo_key not in self.topic_gamma_memo:
-                log_gammas = [0.0]
-                for i in range(1, topic_count + 1):
-                    log_gammas.append(log_gammas[i-1] +
-                                      math.log(self.alphas[topic] + i - 1 +
-                                               self.state_topic_counts[state][topic]))
-                self.topic_gamma_memo[memo_key] = log_gammas[topic_count]
-            ret += self.topic_gamma_memo[memo_key]
+        # for topic, topic_count_float in enumerate(doc.topic_distrib):
+        #     lgam = self.topic_gamma_memo.setdefault((topic, state), {}).get(topic_count_float)
+        #     if lgam is None:
+        #         lgam = math.lgamma(self.alphas[topic] +
+        #                            self.state_topic_counts[state][topic] +
+        #                            topic_count_float) - \
+        #                math.lgamma(self.alphas[topic] + self.state_topic_counts[state][topic])
+        #         self.topic_gamma_memo[topic, state][topic_count_float] = lgam
+        #     ret += lgam
+        #
+        # lgam = self.doc_gamma_memo.setdefault(state, {}).get(doc.length)
+        # if lgam is None:
+        #     lgam = math.lgamma(self.sum_alpha + self.state_topic_totals[state] + doc.length) -\
+        #            math.lgamma(self.sum_alpha + self.state_topic_totals[state])
+        #     self.doc_gamma_memo[state][doc.length] = lgam
+        # ret -= lgam  # note the minus!
 
-        memo_key = (state, doc.length)
-        if memo_key not in self.doc_gamma_memo:
-            log_gammas = [0.0]
-            for i in range(1, doc.length + 1):
-                log_gammas.append(log_gammas[i-1] +
-                                  math.log(self.sum_alpha + i - 1 + self.state_topic_totals[state]))
-            self.doc_gamma_memo[memo_key] = log_gammas[doc.length]
-        ret -= self.doc_gamma_memo[memo_key]
+        for topic, topic_count_float in enumerate(doc.topic_distrib):
+            ret += math.lgamma(self.alphas[topic] +
+                                self.state_topic_counts[state][topic] +
+                                topic_count_float) - \
+                   math.lgamma(self.alphas[topic] + self.state_topic_counts[state][topic])
+
+        ret += math.lgamma(self.sum_alpha + self.state_topic_totals[state]) - \
+            math.lgamma(self.sum_alpha + self.state_topic_totals[state] + doc.length)
 
         return ret
+
+    def calc_state_topic_log_like_arr(self, doc, state):
+        ret = 0.0
+
+        # calcs over arrays indexed by topics
+
+        # num = scipy.special.gammaln(self.alphas + self.state_topic_counts[state] + doc.topic_distrib)
+        # ret += np.sum(num - den)
+        den = self.alphas + self.state_topic_counts[state]
+        num = den + doc.topic_distrib
+        ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
+        # ret += np.sum(np.log(scipy.special.gamma(num)/scipy.special.gamma(den)))
+
+        ret += math.lgamma(self.sum_alpha + self.state_topic_totals[state]) - \
+            math.lgamma(self.sum_alpha + self.state_topic_totals[state] + doc.length)
+
+        return ret
+
+
+
+
+
 
     def add_to_trans_counts(self, doc):
         if doc.doc_prev is None:  # beginning of resume sequence
@@ -311,26 +461,41 @@ class ResumeHMM(object):
                 self.state_trans[doc.state][doc.doc_next.state] -= 1
                 self.state_trans_tots[doc.state] -= 1
 
+
+    # todo: zzz When do we have to wipe out the caches?  Too much and they're useless...
     def add_to_topic_counts(self, doc):
         for topic, topic_count in enumerate(doc.topic_distrib):
             self.state_topic_counts[doc.state][topic] += topic_count
+            if (doc.state, topic) in self.topic_gamma_memo:
+                del self.topic_gamma_memo[(doc.state, topic)]
+
         self.state_topic_totals[doc.state] += doc.length
+        if doc.state in self.doc_gamma_memo:
+            del self.doc_gamma_memo[doc.state]
 
     def remove_from_topic_counts(self, doc):
         for topic, topic_count in enumerate(doc.topic_distrib):
-            self.state_topic_counts[doc.state][topic] -= topic_count
-        self.state_topic_totals[doc.state] -= doc.length
+            if topic_count > 0:
+                self.state_topic_counts[doc.state][topic] -= topic_count
+                if (doc.state, topic) in self.topic_gamma_memo:
+                    del self.topic_gamma_memo[(doc.state, topic)]
+                # self.topic_gamma_memo[(doc.state, topic)] = [0.0]
 
+        self.state_topic_totals[doc.state] -= doc.length
+        if doc.state in self.doc_gamma_memo:
+            del self.doc_gamma_memo[doc.state]
 
 
 class Document(object):
     def __init__(self, res_ent, topic_distrib, doc_prev=None, doc_next=None):
         self.entry = res_ent
-        self.topic_distrib = topic_distrib  # one entry per topic
+        # self.topic_distrib = np.array([ int(round(d)) for d in topic_distrib ])  # integers only!
+        self.topic_distrib = np.array(topic_distrib)
         self.doc_prev = doc_prev
         self.doc_next = doc_next
 
-        self.length = int(round(sum(topic_distrib)))
+        # self.length = int(round(sum(topic_distrib)))
+        self.length = sum(self.topic_distrib)
         self.state = None
 
 
@@ -380,6 +545,30 @@ def read_last_line(file_name):
         return line.rstrip("\n").split("\t")
 
 
+def foo():
+    foo.counter += 1
+    print "Counter is %d" % foo.counter
+foo.counter = 0
+
+
+def lgamma_cache(x):
+    ret = lgamma_cache.cache.get(x)
+    if ret is None:
+        ret = math.lgamma(x)
+        # lgamma_cache.cache[x] = ret
+    return ret
+lgamma_cache.cache = {}
+
+
+def debug_audit_state_trans_tots(docs):
+    num_states = max([ doc.state for doc in docs ]) + 1
+    state_trans_tots = [0] * num_states
+    for doc in docs:
+        if doc.doc_next is not None:
+            state_trans_tots[doc.state] += 1
+    return state_trans_tots
+
+
 ##########################################
 if __name__ == '__main__':
 
@@ -404,3 +593,5 @@ if __name__ == '__main__':
     # hmm.init_doc_states(resume_docs)
     # hmm.sample_doc_states(resume_docs, args.num_iters)
     hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
+
+    print "yo zzz"
