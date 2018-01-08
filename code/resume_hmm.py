@@ -33,7 +33,7 @@ class ResumeHMM(object):
         self.state_trans = [[0]*num_states]*num_states
         self.state_trans_tots = [0]*num_states
 
-        self.state_topic_counts = [np.array([0]*num_topics)]*num_states
+        self.state_topic_counts = [np.zeros(num_topics)]*num_states
         self.state_topic_totals = [0]*num_states
 
         self.sum_alpha = num_topics
@@ -253,16 +253,19 @@ class ResumeHMM(object):
                 self.state_trans[doc.state][doc.doc_next.state] -= 1
                 self.state_trans_tots[doc.state] -= 1
 
-    # todo: these should use array ops instead of iterating
     def add_to_topic_counts(self, doc):
-        for topic, topic_count in enumerate(doc.topic_distrib):
-            self.state_topic_counts[doc.state][topic] += topic_count
+        # for topic, topic_count in enumerate(doc.topic_distrib):
+        #     self.state_topic_counts[doc.state][topic] += topic_count
+        # self.state_topic_totals[doc.state] += doc.length
+        self.state_topic_counts[doc.state] += doc.topic_distrib
         self.state_topic_totals[doc.state] += doc.length
 
     def remove_from_topic_counts(self, doc):
-        for topic, topic_count in enumerate(doc.topic_distrib):
-            if topic_count > 0:
-                self.state_topic_counts[doc.state][topic] -= topic_count
+        # for topic, topic_count in enumerate(doc.topic_distrib):
+        #     if topic_count > 0:
+        #         self.state_topic_counts[doc.state][topic] -= topic_count
+        # self.state_topic_totals[doc.state] -= doc.length
+        self.state_topic_counts[doc.state] -= doc.topic_distrib
         self.state_topic_totals[doc.state] -= doc.length
 
 class Document(object):
