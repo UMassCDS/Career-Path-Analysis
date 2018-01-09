@@ -57,6 +57,8 @@ def make_date(year_elt, month_elt):
         return None
     else:
         year_elt = int(year_elt.text)
+        if year_elt < 100:
+            year_elt += 1900
         try:
             return datetime.date(year_elt, month_elt, 1)
         except ValueError:
