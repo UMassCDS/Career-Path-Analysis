@@ -42,7 +42,7 @@ def sort_stints(resume):
 
 
 def tuplify(res_ent):
-    print "ow ", res_ent
+    # print "ow ", res_ent
     s, e, c, d = tuple(res_ent)
     return (s.strftime(DATE_FORMAT), e.strftime(DATE_FORMAT), c, d)
 
