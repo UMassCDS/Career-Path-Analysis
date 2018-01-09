@@ -147,6 +147,7 @@ class ResumeHMM(object):
 
                 # state_log_likes = [0.0] * self.num_states
                 state_log_likes = np.zeros(self.num_states)
+                # todo: handle these with array funcs rather than iterating over states
                 for s in range(self.num_states):
                     state_log_likes[s] = self.calc_state_state_log_like(doc, s)
                     state_log_likes[s] += self.calc_state_topic_log_like_arr(doc, s)
