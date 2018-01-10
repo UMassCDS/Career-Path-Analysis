@@ -7,6 +7,7 @@ import logging
 import os
 import os.path
 import numpy as np
+from joblib import Parallel, delayed
 from resume_lda import load_json_resumes_lda
 
 import scipy.special
@@ -57,7 +58,7 @@ class ResumeHMM(object):
         for doc in docs:
             # doc.state = self.sample_doc_state(doc)
 
-            state_log_likes = [0.0] * self.num_states
+            state_log_likes = np.zeros(self.num_states)
             for s in range(self.num_states):
                 state_log_likes[s] = self.init_state_log_like(doc, s) + \
                                      self.calc_state_topic_log_like_arr(doc, s)
@@ -139,18 +140,21 @@ class ResumeHMM(object):
                 timing_start = ts_now
 
             for d, doc in enumerate(docs):
-                if d % 500 == 0:
+                if True: # d % 500 == 0:
                     logging.debug("iter {}, doc {}".format(i, d))
 
                 self.remove_from_trans_counts(doc)
                 self.remove_from_topic_counts(doc)
 
                 # state_log_likes = [0.0] * self.num_states
-                state_log_likes = np.zeros(self.num_states)
-                # todo: handle these with array funcs rather than iterating over states
-                for s in range(self.num_states):
-                    state_log_likes[s] = self.calc_state_state_log_like(doc, s)
-                    state_log_likes[s] += self.calc_state_topic_log_like_arr(doc, s)
+                # state_log_likes = np.zeros(self.num_states)
+                # # todo: handle these with array funcs rather than iterating over states
+                # for s in range(self.num_states):
+                #     state_log_likes[s] = self.calc_state_state_log_like(doc, s)
+                #     state_log_likes[s] += self.calc_state_topic_log_like_arr(doc, s)
+
+                state_log_likes = Parallel(n_jobs=2)(delayed(calc_state_log_like)(self, doc, s) for s in range(self.num_states))
+
                 doc.state = sample_from_loglikes(state_log_likes)
 
                 self.add_to_trans_counts(doc)
@@ -295,10 +299,25 @@ def sample_from_loglikes(state_log_likes):
     return state_new
 
 
-def get_docs_from_resumes(resume_list):
+# wrapper to make it work with joblib
+def calc_state_log_like(hmm, doc, state):
+    return hmm.calc_state_state_log_like(doc, state) + hmm.calc_state_topic_log_like_arr(doc, state)
+
+
+def get_docs_from_resumes(resume_list, min_len=1):
     docs = []
-    for resume in resume_list:
-        if len(resume) == 1:
+
+    debug_len_distrib = np.zeros(20, int)
+
+    for r, resume in enumerate(resume_list):
+        resume_len = len(resume)
+        debug_len_distrib[min(19, resume_len)] += 1
+        if r % 10000 == 0:
+            logging.debug("\t{} {}".format(r, debug_len_distrib))
+
+        if resume_len < min_len:
+            pass
+        elif resume_len == 1:
             res_ent, top_dis = resume[0]
             docs.append(Document(res_ent, top_dis, doc_prev=None, doc_next=None))
         else:
@@ -311,6 +330,8 @@ def get_docs_from_resumes(resume_list):
                 doc_prev.doc_next = doc
                 docs.append(doc)
                 doc_prev = doc
+
+    logging.debug("\t{} {}".format(r, debug_len_distrib))
     return docs
 
 
@@ -353,10 +374,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # get a list of lists of (ResumeEntry, topic_distrib) tuples
+    logging.info("loading resumes from file")
     resumes = load_json_resumes_lda(args.infile)
     num_tops = len(resumes[0][0][1])  # distrib for the first job entry in the first resume
+    logging.info("extracting documents from resumes")
     resume_docs = get_docs_from_resumes(resumes)
 
+    logging.info("fitting HMM")
     hmm = ResumeHMM(args.num_states, args.pi, args.gamma, num_tops)
     hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
 
