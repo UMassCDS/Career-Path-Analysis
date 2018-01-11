@@ -243,7 +243,10 @@ class ResumeHMM(object):
                 #                                                 self.sum_gamma)
 
 
-                args = [ (doc, s) for s in range(self.num_states) ]
+                args = [ (s, doc.topic_distrib, doc.length,
+                          doc.doc_prev.state if doc.doc_prev is not None else None,
+                          doc.doc_next.state if doc.doc_next is not None else None
+                         ) for s in range(self.num_states) ]
                 state_log_likes = pool.map(calc_state_log_like, args)
 
                 doc.state = sample_from_loglikes(state_log_likes)
@@ -456,63 +459,48 @@ def sample_from_loglikes(state_log_likes):
 
 
 def calc_state_log_like(args):
-    doc, s = args
+    # doc, s = args
+    s, doc_topic_distrib, doc_length, doc_prev_state, doc_next_state = args
 
     ret = 0.0
 
     # state-topic log like
     den = alphas + state_topic_counts[s]
-    num = den + doc.topic_distrib
+    num = den + doc_topic_distrib
     ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
 
     ret += math.lgamma(sum_alpha + state_topic_totals[s]) - \
-           math.lgamma(sum_alpha + state_topic_totals[s] + doc.length)
+           math.lgamma(sum_alpha + state_topic_totals[s] + doc_length)
 
     # state-state log like
-    if doc.doc_prev is None:  # beginning of resume sequence
+    if doc_prev_state is None:  # beginning of resume sequence
         lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
-        if doc.doc_next is not None:  # not a singleton sequence
-            lik *= state_trans[s, doc.doc_next.state] + gamma
+        if doc_next_state is not None:  # not a singleton sequence
+            lik *= state_trans[s, doc_next_state] + gamma
 
     else:  # middle of sequence
-        if doc.doc_next is None:  # end of sequence
-            lik = (state_trans[doc.doc_prev.state, s] + gamma)
+        if doc_next_state is None:  # end of sequence
+            lik = (state_trans[doc_prev_state, s] + gamma)
         else:
-            if (doc.doc_prev.state == s) and (s == doc.doc_next.state):
-                lik = ((state_trans[doc.doc_prev.state, s] + gamma) *
-                       (state_trans[s, doc.doc_next.state] + 1 + gamma) /
+            if (doc_prev_state == s) and (s == doc_next_state):
+                lik = ((state_trans[doc_prev_state, s] + gamma) *
+                       (state_trans[s, doc_next_state] + 1 + gamma) /
                        (state_trans_tots[s] + 1 + sum_gamma))
 
-            elif doc.doc_prev.state == s:  # and (s != doc_next.state):
-                lik = ((state_trans[doc.doc_prev.state, s] + gamma) *
-                       (state_trans[s, doc.doc_next.state] + gamma) /
+            elif doc_prev_state == s:  # and (s != doc_next.state):
+                lik = ((state_trans[doc_prev_state, s] + gamma) *
+                       (state_trans[s, doc_next_state] + gamma) /
                        (state_trans_tots[s] + 1 + sum_gamma))
 
             else:  # (doc_prev.state != s)
-                lik = ((state_trans[doc.doc_prev.state, s] + gamma) *
-                       (state_trans[s, doc.doc_next.state] + gamma) /
+                lik = ((state_trans[doc_prev_state, s] + gamma) *
+                       (state_trans[s, doc_next_state] + gamma) /
                        (state_trans_tots[s] + sum_gamma))
 
     # print "lik for state ", s, "(", trace, ")", ": ", lik
     ret += math.log(lik)
 
     return ret
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
