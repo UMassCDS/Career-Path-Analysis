@@ -21,450 +21,130 @@ OUT_STATE_TRANS = 'trans.tsv'
 OUT_STATE_TOPICS = 'topics.tsv'
 OUT_STATES = 'states.tsv'
 
-# We declare these as module-level variables so they will automatically be shared
-# by subprocesses.  A bit ugly as it breaks our whole OO design, but perhaps a
-# necessary micro-evil.  Possible todo: do away with ResumeHMM class restructure
-# code as a script operating on global variables.  Encapsulation is for wimps!
-alphas = None
-sum_alpha = 19  # 'cause it's the biggest number
-state_topic_counts = None
-state_topic_totals = None
-start_counts = None
-state_trans = None
-state_trans_tots = None
-pi = 19
-gamma = 19
-sum_pi = 19
-sum_gamma = 19
-num_sequences = 19
 
-class ResumeHMM(object):
-    def __init__(self, num_states, p_pi, p_gamma, num_topics):
-        self.num_states = num_states
-        # self.pi = pi        # (uniform) prior on start state
-        # self.gamma = gamma  # (uniform) prior on state-state transitions
-        #
-        # self.sum_pi = pi*num_states
-        # self.sum_gamma = gamma*num_states
+def init(p_num_states, p_pi, p_gamma, num_topics):
+    # We declare these as module-level variables so they will automatically be shared
+    # by subprocesses.  A bit ugly way to structure a program, but perhaps a
+    # necessary micro-evil.  Possible todo: do away with ResumeHMM class restructure
+    # code as a script operating on global variables.  Encapsulation is for wimps!
+    global num_states, alphas, pi, gamma, sum_alpha, sum_pi, sum_gamma, \
+        start_counts, state_trans, state_trans_tots, \
+        state_topic_counts, state_topic_totals
 
-        # self.start_counts = [0]*num_states
-        # self.state_trans = [[0]*num_states]*num_states
-        # self.state_trans_tots = [0]*num_states
+    num_states = p_num_states
 
-        # self.state_topic_counts = [np.zeros(num_topics)]*num_states
-        # self.state_topic_totals = [0]*num_states
+    pi = p_pi        # (uniform) prior on start state
+    gamma = p_gamma  # (uniform) prior on state-state transitions
 
-        # self.sum_alpha = num_topics
-        # self.alphas = np.array([self.sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
+    sum_pi = pi*num_states
+    sum_gamma = gamma*num_states
 
-        # self.num_sequences = None  # needed for denominator of likelihood, set in fit() below
+    start_counts = np.zeros(num_states, np.int_)
+    state_trans = np.zeros((num_states, num_states), np.int_)
+    state_trans_tots = np.zeros(num_states, np.int_)
 
-        global alphas, pi, gamma, sum_alpha, sum_pi, sum_gamma, \
-            start_counts, state_trans, state_trans_tots, \
-            state_topic_counts, state_topic_totals
+    state_topic_counts = [np.zeros(num_topics)]*num_states
+    state_topic_totals = np.zeros(num_states)
 
-        pi = p_pi        # (uniform) prior on start state
-        gamma = p_gamma  # (uniform) prior on state-state transitions
+    sum_alpha = num_topics
+    alphas = np.array([sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
 
-        sum_pi = pi*num_states
-        sum_gamma = gamma*num_states
 
-        start_counts = np.zeros(num_states, np.int_)
-        state_trans = np.zeros((num_states, num_states), np.int_)
-        state_trans_tots = np.zeros(num_states, np.int_)
+def fit(docs, save_dir, iters, iters_lag, erase=False):
+    global num_sequences
+    num_sequences = len([ d for d in docs if d.doc_prev is None ])
 
-        state_topic_counts = [np.zeros(num_topics)]*num_states
-        state_topic_totals = np.zeros(num_states)
+    if erase:
+        delete_progress(save_dir)
+    if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
+        i = load_progress(docs, save_dir)
+        sample_doc_states(docs, save_dir, iters, iters_lag, start_iter=i+1)
+    else:
+        init_doc_states(docs)
+        sample_doc_states(docs, save_dir, iters, iters_lag)
 
-        sum_alpha = num_topics
-        alphas = np.array([sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
 
-    def fit(self, docs, save_dir, iters, iters_lag, erase=False):
-        global num_sequences
-        num_sequences = len([ d for d in docs if d.doc_prev is None ])
+def init_doc_states(docs):
+    for doc in docs:
+        state_log_likes = np.zeros(num_states)
+        for s in range(num_states):
+            state_log_likes[s] = init_state_log_like(doc, s) + \
+                                 calc_state_topic_log_like(s, doc.topic_distrib, doc.length)
 
-        if erase:
-            self.delete_progress(save_dir)
-        if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
-            i = self.load_progress(docs, save_dir)
-            self.sample_doc_states(docs, save_dir, iters, iters_lag, start_iter=i+1)
-        else:
-            self.init_doc_states(docs)
-            self.sample_doc_states(docs, save_dir, iters, iters_lag)
+        doc.state = sample_from_loglikes(state_log_likes)
 
-    def init_doc_states(self, docs):
-        for doc in docs:
-            # doc.state = self.sample_doc_state(doc)
+        init_trans_counts(doc)
+        add_to_topic_counts(doc)
 
-            state_log_likes = np.zeros(self.num_states)
-            for s in range(self.num_states):
-                state_log_likes[s] = self.init_state_log_like(doc, s) + \
-                                     self.calc_state_topic_log_like_arr(doc, s)
+
+def init_state_log_like(doc, s):
+    # this  is just like calc_state_state_log_like(), except we don't have access to
+    # the state of doc_next while initializing, so things are a bit simpler
+    if doc.doc_prev is None:  # beginning of resume sequence
+        lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
+    else:
+        lik = (state_trans[doc.doc_prev.state, s] + gamma)
+    return math.log(lik)
+
+
+def init_trans_counts(doc):
+    if doc.doc_prev is None:  # beginning of resume sequence
+        start_counts[doc.state] += 1
+    else:  # middle of sequence
+        state_trans[doc.doc_prev.state, doc.state] += 1
+
+    if doc.doc_next is not None:  # not the end of sequence
+        state_trans_tots[doc.state] += 1
+
+
+def sample_doc_states(docs, save_dir, iterations, lag_iters, start_iter=0):
+    timing_iters = 10  # calc a moving average of time per iter over this many
+    timing_start = datetime.datetime.now()
+
+    # create a multiprocessing pool that can be reused each iteration
+    pool = multiprocessing.Pool(processes=1)
+
+    for i in range(start_iter, iterations):
+        logging.debug("iter {}".format(i))
+        if i % timing_iters == 0:
+            ts_now = datetime.datetime.now()
+            logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
+            timing_start = ts_now
+
+        for d, doc in enumerate(docs):
+            if d % 500 == 0:
+                logging.debug("iter {}, doc {}".format(i, d))
+
+            remove_from_trans_counts(doc)
+            remove_from_topic_counts(doc)
+
+            args = [ (s, doc.topic_distrib, doc.length,
+                      doc.doc_prev.state if doc.doc_prev is not None else None,
+                      doc.doc_next.state if doc.doc_next is not None else None
+                     ) for s in range(num_states) ]
+            state_log_likes = pool.map(calc_state_log_like, args)
+
             doc.state = sample_from_loglikes(state_log_likes)
+            add_to_trans_counts(doc)
+            add_to_topic_counts(doc)
 
-            self.init_trans_counts(doc)
-            self.add_to_topic_counts(doc)
+        if i % lag_iters == 0:
+            save_progress(i, docs, save_dir)
 
-    def save_progress(self, i, docs, save_dir):
-        ts = str(datetime.datetime.now())
-
-        # model parameters (should not change between iters)
-        params = {
-            "num_states": self.num_states,
-            "pi": pi,
-            "gamma": gamma,
-            "alphas": alphas.tolist(),
-            "num_sequences": num_sequences,
-        }
-        json_str = json.dumps(params)
-        append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
-
-        # data structures capturing results of latest sampling iteration
-        json_str = json.dumps(state_trans.tolist())
-        append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
-
-        json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
-        append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
-
-        json_str = json.dumps([doc.state for doc in docs])
-        append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
-
-    def load_progress(self, docs, save_dir):
-        ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
-        params = json.loads(json_str)
-        self.num_states = params["num_states"]
-        self.pi = params["pi"]
-        self.gamma = params["gamma"]
-        self.alphas = params["alphas"]
-        self.num_sequences = params["num_sequences"]
-
-        ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
-        self.state_trans = json.loads(json_str)
-
-        ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
-        self.state_topic_counts = json.loads(json_str)
-
-        ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
-        doc_states = json.loads(json_str)
-        for doc, state in zip(docs, doc_states):
-            doc.state = state
-
-        if iter_params == iter_trans == iter_topics == iter_states:
-            return iter_params
-        else:
-            sys.exit("unequal iter counts loaded")
-
-    def delete_progress(self, save_dir):
-        del_count = 0
-        for fname in [OUT_PARAMS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
-            try:
-                path = os.path.join(save_dir, fname)
-                os.remove(path)
-                sys.stderr.write("removed " + path + "\n")
-                del_count += 1
-            except OSError:
-                continue
-        return del_count
-
-    def sample_doc_states(self, docs, save_dir, iterations, lag_iters, start_iter=0):
-        timing_iters = 10  # calc a moving average of time per iter over this many
-        timing_start = datetime.datetime.now()
-
-        # Using multiprocessing pool
-        pool = multiprocessing.Pool(processes=4)
-
-        for i in range(start_iter, iterations):
-            logging.debug("iter {}".format(i))
-            if i % timing_iters == 0:
-                ts_now = datetime.datetime.now()
-                logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
-                timing_start = ts_now
-
-            for d, doc in enumerate(docs):
-                if d % 500 == 0:
-                    logging.debug("iter {}, doc {}".format(i, d))
-
-                self.remove_from_trans_counts(doc)
-                self.remove_from_topic_counts(doc)
-
-                # # Old way, no parallelism
-                # state_log_likes = np.zeros(self.num_states)
-                # # todo: handle these with array funcs rather than iterating over states
-                # for s in range(self.num_states):
-                #     state_log_likes[s] = self.calc_state_state_log_like(doc, s)
-                #     state_log_likes[s] += self.calc_state_topic_log_like_arr(doc, s)
-
-                # # Using joblib naively
-                # state_log_likes = Parallel(n_jobs=2)(delayed(calc_state_log_like)(self, doc, s) for s in range(self.num_states))
-
-                # # Using joblib and extracted function
-                # with Parallel(n_jobs=4) as parallel:
-                #     state_log_likes = parallel(delayed(calc_state_log_like)(
-                #                                                 self.alphas,
-                #                                                 self.state_topic_counts[s],
-                #                                                 self.sum_alpha,
-                #                                                 self.state_topic_totals[s],
-                #                                                 self.pi,
-                #                                                 self.start_counts[s],
-                #                                                 self.num_sequences,
-                #                                                 self.sum_pi,
-                #                                                 s,
-                #                                                 self.gamma,
-                #                                                 self.state_trans_tots[s],
-                #                                                 self.sum_gamma,
-                #         state_trans_prev=self.state_trans[doc.doc_prev.state][s] if
-                #             doc.doc_prev is not None else None,
-                #         state_trans_next=self.state_trans[s][doc.doc_next.state] if
-                #             doc.doc_next is not None else None,
-                #         doc_len=doc.length,
-                #         doc_prev_state=doc.doc_prev.state if
-                #             doc.doc_prev is not None else None,
-                #         doc_next_state=doc.doc_next.state if
-                #             doc.doc_next is not None else None,
-                #         topic_distrib=doc.topic_distrib
-                #     ) for s in range(self.num_states))
-
-                # # Using extracted function, no parallel
-                # state_log_likes = np.zeros(self.num_states)
-                # for s in range(self.num_states):
-                #     state_log_likes[s] = calc_state_log_like(self.alphas,
-                #                                                 self.state_topic_counts[s],
-                #                                                 doc,
-                #                                                 self.sum_alpha,
-                #                                                 self.state_topic_totals[s],
-                #                                                 self.pi,
-                #                                                 self.start_counts[s],
-                #                                                 self.num_sequences,
-                #                                                 self.sum_pi,
-                #                                                 self.state_trans,
-                #                                                 s,
-                #                                                 self.gamma,
-                #                                                 self.state_trans_tots[s],
-                #                                                 self.sum_gamma)
+    pool.terminate()
 
 
-                args = [ (s, doc.topic_distrib, doc.length,
-                          doc.doc_prev.state if doc.doc_prev is not None else None,
-                          doc.doc_next.state if doc.doc_next is not None else None
-                         ) for s in range(self.num_states) ]
-                state_log_likes = pool.map(calc_state_log_like, args)
+def calc_state_log_like(params):
+    s, doc_topic_distrib, doc_length, doc_prev_state, doc_next_state = params
 
-                doc.state = sample_from_loglikes(state_log_likes)
-                self.add_to_trans_counts(doc)
-                self.add_to_topic_counts(doc)
-
-            if i % lag_iters == 0:
-                self.save_progress(i, docs, save_dir)
-
-    def init_state_log_like(self, doc, s):
-        # this  is just like calc_state_state_log_like(), except we don't have access to
-        # the state of doc_next while initializing, so things are a bit simpler
-        if doc.doc_prev is None:  # beginning of resume sequence
-            lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
-        else:
-            lik = (state_trans[doc.doc_prev.state, s] + gamma)
-        return math.log(lik)
-
-    def init_trans_counts(self, doc):
-        if doc.doc_prev is None:  # beginning of resume sequence
-            start_counts[doc.state] += 1
-        else:  # middle of sequence
-            state_trans[doc.doc_prev.state, doc.state] += 1
-
-        if doc.doc_next is not None:  # not the end of sequence
-            state_trans_tots[doc.state] += 1
-
-    def calc_state_state_log_like(self, doc, s):
-        trace = ""
-        if doc.doc_prev is None:  # beginning of resume sequence
-            # trace += "begin "
-            lik = (self.start_counts[s] + self.pi) / (self.num_sequences - 1 + self.sum_pi)
-            # trace += "({} + {}) / ({} - 1 + {}) = {}".format(self.start_counts[s], self.pi,
-            #                                                  self.num_sequences, self.sum_pi,
-            #                                                  lik)
-            if doc.doc_next is not None:  # not a singleton sequence
-                # trace += "cont "
-                # print "state ", s, " doc_next.state ", doc.doc_next.state
-                lik *= self.state_trans[s][doc.doc_next.state] + self.gamma
-
-        else:  # middle of sequence
-            # trace += "middle "
-            if doc.doc_next is None:  # end of sequence
-                lik = (self.state_trans[doc.doc_prev.state][s] + self.gamma)
-                # trace += "end "
-            else:
-                # trace += "cont "
-                if (doc.doc_prev.state == s) and (s == doc.doc_next.state):
-                    lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
-                           (self.state_trans[s][doc.doc_next.state] + 1 + self.gamma) /
-                           (self.state_trans_tots[s] + 1 + self.sum_gamma))
-
-                elif doc.doc_prev.state == s:  # and (s != doc_next.state):
-                    lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
-                           (self.state_trans[s][doc.doc_next.state] + self.gamma) /
-                           (self.state_trans_tots[s] + 1 + self.sum_gamma))
-
-                else:  # (doc_prev.state != s)
-                    lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
-                           (self.state_trans[s][doc.doc_next.state] + self.gamma) /
-                           (self.state_trans_tots[s] + self.sum_gamma))
-
-        # print "lik for state ", s, "(", trace, ")", ": ", lik
-        return math.log(lik)
-
-    def calc_state_topic_log_like_arr(self, doc, state):
-        ret = 0.0
-
-        den = alphas + state_topic_counts[state]
-        num = den + doc.topic_distrib
-        ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
-
-        ret += math.lgamma(sum_alpha + state_topic_totals[state]) - \
-            math.lgamma(sum_alpha + state_topic_totals[state] + doc.length)
-
-        return ret
-
-    def add_to_trans_counts(self, doc):
-        if doc.doc_prev is None:  # beginning of resume sequence
-            start_counts[doc.state] += 1
-
-            if doc.doc_next is not None:  # not a singleton sequence
-                state_trans[doc.state, doc.doc_next.state] += 1
-                state_trans_tots[doc.state] += 1
-
-        else:  # middle of sequence
-            state_trans[doc.doc_prev.state, doc.state] += 1
-
-            if doc.doc_next is not None:  # not the end of sequence
-                state_trans[doc.state, doc.doc_next.state] += 1
-                state_trans_tots[doc.state] += 1
-
-    def remove_from_trans_counts(self, doc):
-        if doc.doc_prev is None:  # beginning of resume sequence
-            start_counts[doc.state] -= 1
-            if doc.doc_next is not None:  # not a singleton sequence
-                state_trans[doc.state, doc.doc_next.state] -= 1
-                state_trans_tots[doc.state] -= 1
-        else:  # middle of sequence
-            state_trans[doc.doc_prev.state, doc.state] -= 1
-            if doc.doc_next is not None:  # not end of sequence
-                state_trans[doc.state, doc.doc_next.state] -= 1
-                state_trans_tots[doc.state] -= 1
-
-    def add_to_topic_counts(self, doc):
-        # for topic, topic_count in enumerate(doc.topic_distrib):
-        #     self.state_topic_counts[doc.state][topic] += topic_count
-        # self.state_topic_totals[doc.state] += doc.length
-        state_topic_counts[doc.state] += doc.topic_distrib
-        state_topic_totals[doc.state] += doc.length
-
-    def remove_from_topic_counts(self, doc):
-        # for topic, topic_count in enumerate(doc.topic_distrib):
-        #     if topic_count > 0:
-        #         self.state_topic_counts[doc.state][topic] -= topic_count
-        # self.state_topic_totals[doc.state] -= doc.length
-        state_topic_counts[doc.state] -= doc.topic_distrib
-        state_topic_totals[doc.state] -= doc.length
-
-class Document(object):
-    def __init__(self, res_ent, topic_distrib, doc_prev=None, doc_next=None):
-        self.entry = res_ent
-        self.topic_distrib = np.array(topic_distrib)
-        self.doc_prev = doc_prev
-        self.doc_next = doc_next
-
-        self.length = sum(self.topic_distrib)
-        self.state = None
+    ret = calc_state_topic_log_like(s, doc_topic_distrib, doc_length)
+    ret += calc_state_state_log_like(s, doc_prev_state, doc_next_state)
+    return ret
 
 
-def sample_from_loglikes(state_log_likes):
-    # turn log likes into a distrib to sample from
-    # state_log_like_max = max(state_log_likes)
-    # state_likes_divmax = [ math.exp(loglik - state_log_like_max) for loglik in state_log_likes ]
-    # norm = sum(state_likes_divmax)
-    # state_samp_distrib = [ lik/norm for lik in state_likes_divmax ]
-    # state_new = np.random.choice(len(state_samp_distrib), p=state_samp_distrib)
-    state_log_like_max = np.max(state_log_likes)
-    state_likes_divmax = np.exp(state_log_likes - state_log_like_max)
-    norm = np.sum(state_likes_divmax)
-    state_samp_distrib = state_likes_divmax/norm
-    state_new = np.random.choice(len(state_samp_distrib), p=state_samp_distrib)
-    return state_new
-
-
-# wrapper to make it work with joblib
-# def calc_state_log_like(alphas,
-#                         state_top_counts,
-#                         sum_alpha,
-#                         state_top_total,
-#                         pi,
-#                         start_count,
-#                         num_seqs,
-#                         sum_pi,
-#                         state,
-#                         gamma,
-#                         state_trans_tot,
-#                         sum_gamma,
-#                         state_trans_prev,
-#                         state_trans_next,
-#                         doc_len,
-#                         doc_prev_state,
-#                         doc_next_state,
-#                         topic_distrib
-#                         ):
-# # return hmm.calc_state_state_log_like(doc, state) + hmm.calc_state_topic_log_like_arr(doc, state)
-# # def calc_state_log_like(args):
-# #     alphas, state_top_counts, doc, sum_alpha, state_top_total, pi, start_count, num_seqs, \
-# #         sum_pi, state_trans, state,gamma, state_trans_tot, sum_gamma = args
-#
-#     ret = 0.0
-#
-#     # state-topic log like
-#     den = alphas + state_top_counts
-#     num = den + topic_distrib
-#     ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
-#
-#     ret += math.lgamma(sum_alpha + state_top_total) - \
-#             math.lgamma(sum_alpha + state_top_total + doc_len)
-#
-#     # state-state log like
-#     if state_trans_prev is None:  # beginning of resume sequence
-#         lik = (start_count + pi) / (num_seqs - 1 + sum_pi)
-#         if state_trans_next is not None:  # not a singleton sequence
-#             lik *= state_trans_next + gamma
-#
-#     else:  # middle of sequence
-#         if state_trans_next is None:  # end of sequence
-#             lik = (state_trans_prev + gamma)
-#             # trace += "end "
-#         else:
-#             # trace += "cont "
-#             if (doc_prev_state == state) and (state == doc_next_state):
-#                 lik = ((state_trans_prev + gamma) *
-#                        (state_trans_next + 1 + gamma) /
-#                        (state_trans_tot + 1 + sum_gamma))
-#
-#             elif doc_prev_state == state:  # and (s != doc_next.state):
-#                 lik = ((state_trans_prev + gamma) *
-#                        (state_trans_next + gamma) /
-#                        (state_trans_tot + 1 + sum_gamma))
-#
-#             else:  # (doc_prev.state != s)
-#                 lik = ((state_trans_prev + gamma) *
-#                        (state_trans_next + gamma) /
-#                        (state_trans_tot + sum_gamma))
-#     ret += math.log(lik)
-#
-#     return ret
-
-
-def calc_state_log_like(args):
-    # doc, s = args
-    s, doc_topic_distrib, doc_length, doc_prev_state, doc_next_state = args
-
+def calc_state_topic_log_like(s, doc_topic_distrib, doc_length):
     ret = 0.0
 
-    # state-topic log like
     den = alphas + state_topic_counts[s]
     num = den + doc_topic_distrib
     ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
@@ -472,7 +152,10 @@ def calc_state_log_like(args):
     ret += math.lgamma(sum_alpha + state_topic_totals[s]) - \
            math.lgamma(sum_alpha + state_topic_totals[s] + doc_length)
 
-    # state-state log like
+    return ret
+
+
+def calc_state_state_log_like(s, doc_prev_state, doc_next_state):
     if doc_prev_state is None:  # beginning of resume sequence
         lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
         if doc_next_state is not None:  # not a singleton sequence
@@ -498,9 +181,598 @@ def calc_state_log_like(args):
                        (state_trans_tots[s] + sum_gamma))
 
     # print "lik for state ", s, "(", trace, ")", ": ", lik
-    ret += math.log(lik)
+    return math.log(lik)
 
-    return ret
+
+def add_to_trans_counts(doc):
+    if doc.doc_prev is None:  # beginning of resume sequence
+        start_counts[doc.state] += 1
+        if doc.doc_next is not None:  # not a singleton sequence
+            state_trans[doc.state, doc.doc_next.state] += 1
+            state_trans_tots[doc.state] += 1
+    else:  # middle of sequence
+        state_trans[doc.doc_prev.state, doc.state] += 1
+        if doc.doc_next is not None:  # not the end of sequence
+            state_trans[doc.state, doc.doc_next.state] += 1
+            state_trans_tots[doc.state] += 1
+
+
+def remove_from_trans_counts(doc):
+    if doc.doc_prev is None:  # beginning of resume sequence
+        start_counts[doc.state] -= 1
+        if doc.doc_next is not None:  # not a singleton sequence
+            state_trans[doc.state, doc.doc_next.state] -= 1
+            state_trans_tots[doc.state] -= 1
+    else:  # middle of sequence
+        state_trans[doc.doc_prev.state, doc.state] -= 1
+        if doc.doc_next is not None:  # not end of sequence
+            state_trans[doc.state, doc.doc_next.state] -= 1
+            state_trans_tots[doc.state] -= 1
+
+
+def add_to_topic_counts(doc):
+    state_topic_counts[doc.state] += doc.topic_distrib
+    state_topic_totals[doc.state] += doc.length
+
+
+def remove_from_topic_counts(doc):
+    state_topic_counts[doc.state] -= doc.topic_distrib
+    state_topic_totals[doc.state] -= doc.length
+
+
+def save_progress(i, docs, save_dir):
+    ts = str(datetime.datetime.now())
+
+    # model parameters (should not change between iters)
+    params = {
+        "num_states": num_states,
+        "pi": pi,
+        "gamma": gamma,
+        "alphas": alphas.tolist(),
+        "num_sequences": num_sequences,
+    }
+    json_str = json.dumps(params)
+    append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
+
+    # data structures capturing results of latest sampling iteration
+    json_str = json.dumps(state_trans.tolist())
+    append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
+
+    json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
+    append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
+
+    json_str = json.dumps([doc.state for doc in docs])
+    append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
+
+    #todo: need to save start state counts
+
+
+def load_progress(docs, save_dir):
+    global num_states, pi, gamma, alphas, num_sequences, state_trans, state_topic_counts
+
+    ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
+    params = json.loads(json_str)
+    num_states = params["num_states"]
+    pi = params["pi"]
+    gamma = params["gamma"]
+    alphas = params["alphas"]
+    num_sequences = params["num_sequences"]
+
+    ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
+    state_trans = json.loads(json_str)
+
+    ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
+    state_topic_counts = json.loads(json_str)
+
+    ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
+    doc_states = json.loads(json_str)
+    for doc, state in zip(docs, doc_states):
+        doc.state = state
+
+    if iter_params == iter_trans == iter_topics == iter_states:
+        return iter_params
+    else:
+        sys.exit("unequal iter counts loaded")
+
+    # todo: need to load start state counts
+
+
+def delete_progress(save_dir):
+    del_count = 0
+    for fname in [OUT_PARAMS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
+        try:
+            path = os.path.join(save_dir, fname)
+            os.remove(path)
+            sys.stderr.write("removed " + path + "\n")
+            del_count += 1
+        except OSError:
+            continue
+    return del_count
+
+
+
+
+
+###############################################################
+###############################################################
+###############################################################
+
+
+# # We declare these as module-level variables so they will automatically be shared
+# # by subprocesses.  A bit ugly as it breaks our whole OO design, but perhaps a
+# # necessary micro-evil.  Possible todo: do away with ResumeHMM class restructure
+# # code as a script operating on global variables.  Encapsulation is for wimps!
+# # alphas = None
+# # sum_alpha = 19  # 'cause it's the biggest number
+# # state_topic_counts = None
+# # state_topic_totals = None
+# # start_counts = None
+# # state_trans = None
+# # state_trans_tots = None
+# # pi = 19
+# # gamma = 19
+# # sum_pi = 19
+# # sum_gamma = 19
+# # num_sequences = 19
+#
+# class ResumeHMM(object):
+#     def __init__(self, num_states, p_pi, p_gamma, num_topics):
+#         self.num_states = num_states
+#         # self.pi = pi        # (uniform) prior on start state
+#         # self.gamma = gamma  # (uniform) prior on state-state transitions
+#         #
+#         # self.sum_pi = pi*num_states
+#         # self.sum_gamma = gamma*num_states
+#
+#         # self.start_counts = [0]*num_states
+#         # self.state_trans = [[0]*num_states]*num_states
+#         # self.state_trans_tots = [0]*num_states
+#
+#         # self.state_topic_counts = [np.zeros(num_topics)]*num_states
+#         # self.state_topic_totals = [0]*num_states
+#
+#         # self.sum_alpha = num_topics
+#         # self.alphas = np.array([self.sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
+#
+#         # self.num_sequences = None  # needed for denominator of likelihood, set in fit() below
+#
+#         global alphas, pi, gamma, sum_alpha, sum_pi, sum_gamma, \
+#             start_counts, state_trans, state_trans_tots, \
+#             state_topic_counts, state_topic_totals
+#
+#         pi = p_pi        # (uniform) prior on start state
+#         gamma = p_gamma  # (uniform) prior on state-state transitions
+#
+#         sum_pi = pi*num_states
+#         sum_gamma = gamma*num_states
+#
+#         start_counts = np.zeros(num_states, np.int_)
+#         state_trans = np.zeros((num_states, num_states), np.int_)
+#         state_trans_tots = np.zeros(num_states, np.int_)
+#
+#         state_topic_counts = [np.zeros(num_topics)]*num_states
+#         state_topic_totals = np.zeros(num_states)
+#
+#         sum_alpha = num_topics
+#         alphas = np.array([sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
+#
+#     def fit(self, docs, save_dir, iters, iters_lag, erase=False):
+#         global num_sequences
+#         num_sequences = len([ d for d in docs if d.doc_prev is None ])
+#
+#         if erase:
+#             self.delete_progress(save_dir)
+#         if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
+#             i = self.load_progress(docs, save_dir)
+#             self.sample_doc_states(docs, save_dir, iters, iters_lag, start_iter=i+1)
+#         else:
+#             self.init_doc_states(docs)
+#             self.sample_doc_states(docs, save_dir, iters, iters_lag)
+#
+#     def init_doc_states(self, docs):
+#         for doc in docs:
+#             # doc.state = self.sample_doc_state(doc)
+#
+#             state_log_likes = np.zeros(self.num_states)
+#             for s in range(self.num_states):
+#                 state_log_likes[s] = self.init_state_log_like(doc, s) + \
+#                                      self.calc_state_topic_log_like_arr(doc, s)
+#             doc.state = sample_from_loglikes(state_log_likes)
+#
+#             self.init_trans_counts(doc)
+#             self.add_to_topic_counts(doc)
+#
+#     def save_progress(self, i, docs, save_dir):
+#         ts = str(datetime.datetime.now())
+#
+#         # model parameters (should not change between iters)
+#         params = {
+#             "num_states": self.num_states,
+#             "pi": pi,
+#             "gamma": gamma,
+#             "alphas": alphas.tolist(),
+#             "num_sequences": num_sequences,
+#         }
+#         json_str = json.dumps(params)
+#         append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
+#
+#         # data structures capturing results of latest sampling iteration
+#         json_str = json.dumps(state_trans.tolist())
+#         append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
+#
+#         json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
+#         append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
+#
+#         json_str = json.dumps([doc.state for doc in docs])
+#         append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
+#
+#     def load_progress(self, docs, save_dir):
+#         ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
+#         params = json.loads(json_str)
+#         self.num_states = params["num_states"]
+#         self.pi = params["pi"]
+#         self.gamma = params["gamma"]
+#         self.alphas = params["alphas"]
+#         self.num_sequences = params["num_sequences"]
+#
+#         ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
+#         self.state_trans = json.loads(json_str)
+#
+#         ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
+#         self.state_topic_counts = json.loads(json_str)
+#
+#         ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
+#         doc_states = json.loads(json_str)
+#         for doc, state in zip(docs, doc_states):
+#             doc.state = state
+#
+#         if iter_params == iter_trans == iter_topics == iter_states:
+#             return iter_params
+#         else:
+#             sys.exit("unequal iter counts loaded")
+#
+#     def delete_progress(self, save_dir):
+#         del_count = 0
+#         for fname in [OUT_PARAMS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
+#             try:
+#                 path = os.path.join(save_dir, fname)
+#                 os.remove(path)
+#                 sys.stderr.write("removed " + path + "\n")
+#                 del_count += 1
+#             except OSError:
+#                 continue
+#         return del_count
+#
+#     def sample_doc_states(self, docs, save_dir, iterations, lag_iters, start_iter=0):
+#         timing_iters = 10  # calc a moving average of time per iter over this many
+#         timing_start = datetime.datetime.now()
+#
+#         # Using multiprocessing pool
+#         pool = multiprocessing.Pool(processes=4)
+#
+#         for i in range(start_iter, iterations):
+#             logging.debug("iter {}".format(i))
+#             if i % timing_iters == 0:
+#                 ts_now = datetime.datetime.now()
+#                 logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
+#                 timing_start = ts_now
+#
+#             for d, doc in enumerate(docs):
+#                 if d % 500 == 0:
+#                     logging.debug("iter {}, doc {}".format(i, d))
+#
+#                 self.remove_from_trans_counts(doc)
+#                 self.remove_from_topic_counts(doc)
+#
+#                 # # Old way, no parallelism
+#                 # state_log_likes = np.zeros(self.num_states)
+#                 # # todo: handle these with array funcs rather than iterating over states
+#                 # for s in range(self.num_states):
+#                 #     state_log_likes[s] = self.calc_state_state_log_like(doc, s)
+#                 #     state_log_likes[s] += self.calc_state_topic_log_like_arr(doc, s)
+#
+#                 # # Using joblib naively
+#                 # state_log_likes = Parallel(n_jobs=2)(delayed(calc_state_log_like)(self, doc, s) for s in range(self.num_states))
+#
+#                 # # Using joblib and extracted function
+#                 # with Parallel(n_jobs=4) as parallel:
+#                 #     state_log_likes = parallel(delayed(calc_state_log_like)(
+#                 #                                                 self.alphas,
+#                 #                                                 self.state_topic_counts[s],
+#                 #                                                 self.sum_alpha,
+#                 #                                                 self.state_topic_totals[s],
+#                 #                                                 self.pi,
+#                 #                                                 self.start_counts[s],
+#                 #                                                 self.num_sequences,
+#                 #                                                 self.sum_pi,
+#                 #                                                 s,
+#                 #                                                 self.gamma,
+#                 #                                                 self.state_trans_tots[s],
+#                 #                                                 self.sum_gamma,
+#                 #         state_trans_prev=self.state_trans[doc.doc_prev.state][s] if
+#                 #             doc.doc_prev is not None else None,
+#                 #         state_trans_next=self.state_trans[s][doc.doc_next.state] if
+#                 #             doc.doc_next is not None else None,
+#                 #         doc_len=doc.length,
+#                 #         doc_prev_state=doc.doc_prev.state if
+#                 #             doc.doc_prev is not None else None,
+#                 #         doc_next_state=doc.doc_next.state if
+#                 #             doc.doc_next is not None else None,
+#                 #         topic_distrib=doc.topic_distrib
+#                 #     ) for s in range(self.num_states))
+#
+#                 # # Using extracted function, no parallel
+#                 # state_log_likes = np.zeros(self.num_states)
+#                 # for s in range(self.num_states):
+#                 #     state_log_likes[s] = calc_state_log_like(self.alphas,
+#                 #                                                 self.state_topic_counts[s],
+#                 #                                                 doc,
+#                 #                                                 self.sum_alpha,
+#                 #                                                 self.state_topic_totals[s],
+#                 #                                                 self.pi,
+#                 #                                                 self.start_counts[s],
+#                 #                                                 self.num_sequences,
+#                 #                                                 self.sum_pi,
+#                 #                                                 self.state_trans,
+#                 #                                                 s,
+#                 #                                                 self.gamma,
+#                 #                                                 self.state_trans_tots[s],
+#                 #                                                 self.sum_gamma)
+#
+#
+#                 args = [ (s, doc.topic_distrib, doc.length,
+#                           doc.doc_prev.state if doc.doc_prev is not None else None,
+#                           doc.doc_next.state if doc.doc_next is not None else None
+#                          ) for s in range(self.num_states) ]
+#                 state_log_likes = pool.map(calc_state_log_like, args)
+#
+#                 doc.state = sample_from_loglikes(state_log_likes)
+#                 self.add_to_trans_counts(doc)
+#                 self.add_to_topic_counts(doc)
+#
+#             if i % lag_iters == 0:
+#                 self.save_progress(i, docs, save_dir)
+#
+#     def init_state_log_like(self, doc, s):
+#         # this  is just like calc_state_state_log_like(), except we don't have access to
+#         # the state of doc_next while initializing, so things are a bit simpler
+#         if doc.doc_prev is None:  # beginning of resume sequence
+#             lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
+#         else:
+#             lik = (state_trans[doc.doc_prev.state, s] + gamma)
+#         return math.log(lik)
+#
+#     def init_trans_counts(self, doc):
+#         if doc.doc_prev is None:  # beginning of resume sequence
+#             start_counts[doc.state] += 1
+#         else:  # middle of sequence
+#             state_trans[doc.doc_prev.state, doc.state] += 1
+#
+#         if doc.doc_next is not None:  # not the end of sequence
+#             state_trans_tots[doc.state] += 1
+#
+#     def calc_state_state_log_like(self, doc, s):
+#         trace = ""
+#         if doc.doc_prev is None:  # beginning of resume sequence
+#             # trace += "begin "
+#             lik = (self.start_counts[s] + self.pi) / (self.num_sequences - 1 + self.sum_pi)
+#             # trace += "({} + {}) / ({} - 1 + {}) = {}".format(self.start_counts[s], self.pi,
+#             #                                                  self.num_sequences, self.sum_pi,
+#             #                                                  lik)
+#             if doc.doc_next is not None:  # not a singleton sequence
+#                 # trace += "cont "
+#                 # print "state ", s, " doc_next.state ", doc.doc_next.state
+#                 lik *= self.state_trans[s][doc.doc_next.state] + self.gamma
+#
+#         else:  # middle of sequence
+#             # trace += "middle "
+#             if doc.doc_next is None:  # end of sequence
+#                 lik = (self.state_trans[doc.doc_prev.state][s] + self.gamma)
+#                 # trace += "end "
+#             else:
+#                 # trace += "cont "
+#                 if (doc.doc_prev.state == s) and (s == doc.doc_next.state):
+#                     lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
+#                            (self.state_trans[s][doc.doc_next.state] + 1 + self.gamma) /
+#                            (self.state_trans_tots[s] + 1 + self.sum_gamma))
+#
+#                 elif doc.doc_prev.state == s:  # and (s != doc_next.state):
+#                     lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
+#                            (self.state_trans[s][doc.doc_next.state] + self.gamma) /
+#                            (self.state_trans_tots[s] + 1 + self.sum_gamma))
+#
+#                 else:  # (doc_prev.state != s)
+#                     lik = ((self.state_trans[doc.doc_prev.state][s] + self.gamma) *
+#                            (self.state_trans[s][doc.doc_next.state] + self.gamma) /
+#                            (self.state_trans_tots[s] + self.sum_gamma))
+#
+#         # print "lik for state ", s, "(", trace, ")", ": ", lik
+#         return math.log(lik)
+#
+#     def calc_state_topic_log_like_arr(self, doc, state):
+#         ret = 0.0
+#
+#         den = alphas + state_topic_counts[state]
+#         num = den + doc.topic_distrib
+#         ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
+#
+#         ret += math.lgamma(sum_alpha + state_topic_totals[state]) - \
+#             math.lgamma(sum_alpha + state_topic_totals[state] + doc.length)
+#
+#         return ret
+#
+#     def add_to_trans_counts(self, doc):
+#         if doc.doc_prev is None:  # beginning of resume sequence
+#             start_counts[doc.state] += 1
+#
+#             if doc.doc_next is not None:  # not a singleton sequence
+#                 state_trans[doc.state, doc.doc_next.state] += 1
+#                 state_trans_tots[doc.state] += 1
+#
+#         else:  # middle of sequence
+#             state_trans[doc.doc_prev.state, doc.state] += 1
+#
+#             if doc.doc_next is not None:  # not the end of sequence
+#                 state_trans[doc.state, doc.doc_next.state] += 1
+#                 state_trans_tots[doc.state] += 1
+#
+#     def remove_from_trans_counts(self, doc):
+#         if doc.doc_prev is None:  # beginning of resume sequence
+#             start_counts[doc.state] -= 1
+#             if doc.doc_next is not None:  # not a singleton sequence
+#                 state_trans[doc.state, doc.doc_next.state] -= 1
+#                 state_trans_tots[doc.state] -= 1
+#         else:  # middle of sequence
+#             state_trans[doc.doc_prev.state, doc.state] -= 1
+#             if doc.doc_next is not None:  # not end of sequence
+#                 state_trans[doc.state, doc.doc_next.state] -= 1
+#                 state_trans_tots[doc.state] -= 1
+#
+#     def add_to_topic_counts(self, doc):
+#         # for topic, topic_count in enumerate(doc.topic_distrib):
+#         #     self.state_topic_counts[doc.state][topic] += topic_count
+#         # self.state_topic_totals[doc.state] += doc.length
+#         state_topic_counts[doc.state] += doc.topic_distrib
+#         state_topic_totals[doc.state] += doc.length
+#
+#     def remove_from_topic_counts(self, doc):
+#         # for topic, topic_count in enumerate(doc.topic_distrib):
+#         #     if topic_count > 0:
+#         #         self.state_topic_counts[doc.state][topic] -= topic_count
+#         # self.state_topic_totals[doc.state] -= doc.length
+#         state_topic_counts[doc.state] -= doc.topic_distrib
+#         state_topic_totals[doc.state] -= doc.length
+
+class Document(object):
+    def __init__(self, res_ent, topic_distrib, doc_prev=None, doc_next=None):
+        self.entry = res_ent
+        self.topic_distrib = np.array(topic_distrib)
+        self.doc_prev = doc_prev
+        self.doc_next = doc_next
+
+        self.length = sum(self.topic_distrib)
+        self.state = None
+
+
+def sample_from_loglikes(state_log_likes):
+    # turn log likes into a distrib to sample from
+    state_log_like_max = np.max(state_log_likes)
+    state_likes_divmax = np.exp(state_log_likes - state_log_like_max)
+    norm = np.sum(state_likes_divmax)
+    state_samp_distrib = state_likes_divmax/norm
+    state_new = np.random.choice(len(state_samp_distrib), p=state_samp_distrib)
+    return state_new
+
+
+# # wrapper to make it work with joblib
+# # def calc_state_log_like(alphas,
+# #                         state_top_counts,
+# #                         sum_alpha,
+# #                         state_top_total,
+# #                         pi,
+# #                         start_count,
+# #                         num_seqs,
+# #                         sum_pi,
+# #                         state,
+# #                         gamma,
+# #                         state_trans_tot,
+# #                         sum_gamma,
+# #                         state_trans_prev,
+# #                         state_trans_next,
+# #                         doc_len,
+# #                         doc_prev_state,
+# #                         doc_next_state,
+# #                         topic_distrib
+# #                         ):
+# # # return hmm.calc_state_state_log_like(doc, state) + hmm.calc_state_topic_log_like_arr(doc, state)
+# # # def calc_state_log_like(args):
+# # #     alphas, state_top_counts, doc, sum_alpha, state_top_total, pi, start_count, num_seqs, \
+# # #         sum_pi, state_trans, state,gamma, state_trans_tot, sum_gamma = args
+# #
+# #     ret = 0.0
+# #
+# #     # state-topic log like
+# #     den = alphas + state_top_counts
+# #     num = den + topic_distrib
+# #     ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
+# #
+# #     ret += math.lgamma(sum_alpha + state_top_total) - \
+# #             math.lgamma(sum_alpha + state_top_total + doc_len)
+# #
+# #     # state-state log like
+# #     if state_trans_prev is None:  # beginning of resume sequence
+# #         lik = (start_count + pi) / (num_seqs - 1 + sum_pi)
+# #         if state_trans_next is not None:  # not a singleton sequence
+# #             lik *= state_trans_next + gamma
+# #
+# #     else:  # middle of sequence
+# #         if state_trans_next is None:  # end of sequence
+# #             lik = (state_trans_prev + gamma)
+# #             # trace += "end "
+# #         else:
+# #             # trace += "cont "
+# #             if (doc_prev_state == state) and (state == doc_next_state):
+# #                 lik = ((state_trans_prev + gamma) *
+# #                        (state_trans_next + 1 + gamma) /
+# #                        (state_trans_tot + 1 + sum_gamma))
+# #
+# #             elif doc_prev_state == state:  # and (s != doc_next.state):
+# #                 lik = ((state_trans_prev + gamma) *
+# #                        (state_trans_next + gamma) /
+# #                        (state_trans_tot + 1 + sum_gamma))
+# #
+# #             else:  # (doc_prev.state != s)
+# #                 lik = ((state_trans_prev + gamma) *
+# #                        (state_trans_next + gamma) /
+# #                        (state_trans_tot + sum_gamma))
+# #     ret += math.log(lik)
+# #
+# #     return ret
+#
+#
+# def calc_state_log_like(args):
+#     # doc, s = args
+#     s, doc_topic_distrib, doc_length, doc_prev_state, doc_next_state = args
+#
+#     ret = 0.0
+#
+#     # state-topic log like
+#     den = alphas + state_topic_counts[s]
+#     num = den + doc_topic_distrib
+#     ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
+#
+#     ret += math.lgamma(sum_alpha + state_topic_totals[s]) - \
+#            math.lgamma(sum_alpha + state_topic_totals[s] + doc_length)
+#
+#     # state-state log like
+#     if doc_prev_state is None:  # beginning of resume sequence
+#         lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
+#         if doc_next_state is not None:  # not a singleton sequence
+#             lik *= state_trans[s, doc_next_state] + gamma
+#
+#     else:  # middle of sequence
+#         if doc_next_state is None:  # end of sequence
+#             lik = (state_trans[doc_prev_state, s] + gamma)
+#         else:
+#             if (doc_prev_state == s) and (s == doc_next_state):
+#                 lik = ((state_trans[doc_prev_state, s] + gamma) *
+#                        (state_trans[s, doc_next_state] + 1 + gamma) /
+#                        (state_trans_tots[s] + 1 + sum_gamma))
+#
+#             elif doc_prev_state == s:  # and (s != doc_next.state):
+#                 lik = ((state_trans[doc_prev_state, s] + gamma) *
+#                        (state_trans[s, doc_next_state] + gamma) /
+#                        (state_trans_tots[s] + 1 + sum_gamma))
+#
+#             else:  # (doc_prev.state != s)
+#                 lik = ((state_trans[doc_prev_state, s] + gamma) *
+#                        (state_trans[s, doc_next_state] + gamma) /
+#                        (state_trans_tots[s] + sum_gamma))
+#
+#     # print "lik for state ", s, "(", trace, ")", ": ", lik
+#     ret += math.log(lik)
+#
+#     return ret
 
 
 
@@ -587,7 +859,10 @@ if __name__ == '__main__':
     resume_docs = get_docs_from_resumes(resumes)
 
     logging.info("fitting HMM")
-    hmm = ResumeHMM(args.num_states, args.pi, args.gamma, num_tops)
-    hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
+    # hmm = ResumeHMM(args.num_states, args.pi, args.gamma, num_tops)
+    # hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
+
+    init(args.num_states, args.pi, args.gamma, num_tops)
+    fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
 
     print "yo zzz"
