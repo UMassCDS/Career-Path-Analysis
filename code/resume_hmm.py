@@ -4,20 +4,19 @@ import argparse
 import json
 import datetime
 import logging
-import collections
 import os
 import os.path
 import numpy as np
-from joblib import Parallel, delayed
 import multiprocessing
 from resume_lda import load_json_resumes_lda
-
 import scipy.special
+
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
 OUT_PARAMS = 'params.tsv'
+OUT_START_COUNTS = 'starts.tsv'
 OUT_STATE_TRANS = 'trans.tsv'
 OUT_STATE_TOPICS = 'topics.tsv'
 OUT_STATES = 'states.tsv'
@@ -150,17 +149,7 @@ def calc_state_topic_log_like(s, d):
     ret = 0.0
 
     den = alphas + state_topic_counts[s]
-    # print 1, type(alphas)
-    # print 2, type(state_topic_counts[s])
-    # print 3, type(den)
-    # print 4, type(document_topic_distribs)
-    # print 5, type(document_topic_distribs[0])
-    # print 6, type(document_topic_distribs[1])
-    # print 7, type(d)
-    # print 8, type(document_topic_distribs[d])
-
     num = den + documents[d].topic_distrib
-
     ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
 
     ret += math.lgamma(sum_alpha + state_topic_totals[s]) - \
@@ -246,63 +235,65 @@ def remove_from_topic_counts(d):
 def save_progress(i, save_dir):
     ts = str(datetime.datetime.now())
 
-    # # model parameters (should not change between iters)
-    # params = {
-    #     "num_states": num_states,
-    #     "pi": pi,
-    #     "gamma": gamma,
-    #     "alphas": alphas.tolist(),
-    #     "num_sequences": num_sequences,
-    # }
-    # json_str = json.dumps(params)
-    # append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
-    #
-    # # data structures capturing results of latest sampling iteration
-    # json_str = json.dumps(state_trans.tolist())
-    # append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
-    #
-    # json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
-    # append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
-    #
-    # json_str = json.dumps([doc.state for doc in docs])
-    # append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
-    #
-    # #todo: need to save start state counts
+    # model parameters (should not change between iters)
+    params = {
+        "num_states": num_states,
+        "pi": pi,
+        "gamma": gamma,
+        "alphas": alphas.tolist(),
+        "num_sequences": num_sequences,
+    }
+    json_str = json.dumps(params)
+    append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
+
+    # data structures capturing results of latest sampling iteration
+    json_str = json.dumps(start_counts.tolist())
+    append_to_file(os.path.join(save_dir, OUT_START_COUNTS), [ts, i, json_str])
+
+    json_str = json.dumps(state_trans.tolist())
+    append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
+
+    json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
+    append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
+
+    json_str = json.dumps([doc.state for doc in documents])
+    append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
 
 
 def load_progress(save_dir):
-    global num_states, pi, gamma, alphas, num_sequences, state_trans, state_topic_counts
+    global num_states, pi, gamma, alphas, num_sequences, start_counts, state_trans, state_topic_counts
 
-    # ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
-    # params = json.loads(json_str)
-    # num_states = params["num_states"]
-    # pi = params["pi"]
-    # gamma = params["gamma"]
-    # alphas = params["alphas"]
-    # num_sequences = params["num_sequences"]
-    #
-    # ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
-    # state_trans = json.loads(json_str)
-    #
-    # ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
-    # state_topic_counts = json.loads(json_str)
-    #
-    # ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
-    # doc_states = json.loads(json_str)
-    # for doc, state in zip(document_infos, document_states):
-    #     doc.state = state
-    #
-    # if iter_params == iter_trans == iter_topics == iter_states:
-    #     return iter_params
-    # else:
-    #     sys.exit("unequal iter counts loaded")
-    #
-    # # todo: need to load start state counts
+    ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
+    params = json.loads(json_str)
+    num_states = params["num_states"]
+    pi = params["pi"]
+    gamma = params["gamma"]
+    alphas = params["alphas"]
+    num_sequences = params["num_sequences"]
+
+    ts, iter_starts, json_str = read_last_line(os.path.join(save_dir, OUT_START_COUNTS))
+    start_counts = np.array(json.loads(json_str), np.int_)
+
+    ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
+    state_trans = np.array(json.loads(json_str), np.int_)
+
+    ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
+    state_topic_counts = [ np.array(lst) for lst in json.loads(json_str) ]
+
+    ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
+    doc_states = json.loads(json_str)
+    for doc, state in zip(documents, doc_states):
+        doc.state = state
+
+    if iter_params == iter_starts == iter_trans == iter_topics == iter_states:
+        return iter_params
+    else:
+        sys.exit("unequal iter counts loaded")
 
 
 def delete_progress(save_dir):
     del_count = 0
-    for fname in [OUT_PARAMS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
+    for fname in [OUT_PARAMS, OUT_START_COUNTS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
         try:
             path = os.path.join(save_dir, fname)
             os.remove(path)
@@ -313,12 +304,8 @@ def delete_progress(save_dir):
     return del_count
 
 
-
-
-
-
 def sample_from_loglikes(state_log_likes):
-    # turn log likes into a distrib to sample from
+    # turn log likes into a distrib from which to sample
     state_log_like_max = np.max(state_log_likes)
     state_likes_divmax = np.exp(state_log_likes - state_log_like_max)
     norm = np.sum(state_likes_divmax)
@@ -327,35 +314,16 @@ def sample_from_loglikes(state_log_likes):
     return state_new
 
 
+class Document(object):
+    def __init__(self, doc_prev, doc_next, topic_distrib):
+        self.doc_prev = doc_prev
+        self.doc_next = doc_next
+        self.topic_distrib = np.array(topic_distrib)
+        self.length = sum(topic_distrib)
+        self.state = None
 
-# DocumentInfo = collections.namedtuple('DocumentInfo', ['idx', 'doc_prev', 'doc_next', 'length'])
 
 def get_docs_from_resumes(resume_list, min_len=1):
-    # global document_infos, document_topic_distribs, document_states
-    # document_infos = []
-    # document_topic_distribs = []
-    #
-    # debug_len_distrib = np.zeros(20, np.int_)
-    #
-    # doc_idx = 0
-    # for r, resume in enumerate(resume_list):
-    #     resume_len = len(resume)
-    #     debug_len_distrib[min(19, resume_len)] += 1
-    #     if r % 10000 == 0:
-    #         logging.debug("\t{} {}".format(r, debug_len_distrib))
-    #
-    #     if resume_len < min_len:
-    #         continue
-    #
-    #     idxs = range(doc_idx, doc_idx + resume_len)
-    #     prevs = [None] + idxs[:-1]
-    #     nexts = idxs[1:] + [None]
-    #     for i, (res_ent, top_dis) in enumerate(resume):
-    #         document_infos.append(DocumentInfo(idxs[i], prevs[i], nexts[i], sum(top_dis)))
-    #         document_topic_distribs.append(np.array(top_dis))
-    #     doc_idx += resume_len
-    #
-    # document_states = np.zeros(len(document_infos), np.int_)
     global documents
     documents = []
 
@@ -378,15 +346,6 @@ def get_docs_from_resumes(resume_list, min_len=1):
             documents.append(Document(prevs[i], nexts[i], top_dis))
 
         doc_idx += resume_len
-
-
-class Document(object):
-    def __init__(self, doc_prev, doc_next, topic_distrib):
-        self.doc_prev = doc_prev
-        self.doc_next = doc_next
-        self.topic_distrib = np.array(topic_distrib)
-        self.length = sum(topic_distrib)
-        self.state = None
 
 
 def append_to_file(file_name, elts):
@@ -432,12 +391,9 @@ if __name__ == '__main__':
     resumes = load_json_resumes_lda(args.infile)
     num_tops = len(resumes[0][0][1])  # distrib for the first job entry in the first resume
     logging.info("extracting documents from resumes")
-    # resume_docs = get_docs_from_resumes(resumes)
     get_docs_from_resumes(resumes)
 
     logging.info("fitting HMM")
-    # hmm = ResumeHMM(args.num_states, args.pi, args.gamma, num_tops)
-    # hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
     init(args.num_states, args.pi, args.gamma, num_tops)
     fit(args.savedir, args.num_iters, args.lag, erase=args.erase)
 
