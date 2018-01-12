@@ -132,22 +132,12 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
             else:
                 if chunk_size is None:
                     chunk_size = num_states/num_procs  # this should give us a floor
-                # chunks = [ range(i, min(i+chunk_size, num_states)) for i in range(0, num_states,
-                #                                                                   chunk_size) ]
-                # args = [ (s, d) for s in range(num_states) ]
-                # arg_chunks = [ args[i:min(i+chunk_size, num_states)]  for i in range(0, num_states,
-                #                                                                      chunk_size) ]
-                # state_log_likes = pool.map(calc_state_log_like, arg_chunks)
-
                 state_chunk_starts = range(0, num_states, chunk_size)
                 state_chunk_ends = [ min(s + chunk_size, num_states) for s in state_chunk_starts ]
                 args = [(d, start, end) for start, end in zip(state_chunk_starts, state_chunk_ends) ]
                 state_log_likes_chunks = pool.map(calc_state_log_like, args)
 
-            state_log_likes, _ = resume_common.flatten(state_log_likes_chunks)
-
-            # state_log_likes = pool.map(calc_state_log_like, args)
-
+            state_log_likes, _ = resume_common.flatten(state_log_likes_chunks)  # todo: use numpy flatten
             documents[d].state = sample_from_loglikes(state_log_likes)
             add_to_trans_counts(d)
             add_to_topic_counts(d)

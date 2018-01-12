@@ -1,10 +1,12 @@
-import sys
 import json
-from sklearn.feature_extraction.text import CountVectorizer
+import sys
+
 from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer
 
 import resume_common
 from resume_import import load_json_resumes
+
 
 # # gets a list of lists of ResumeEntry objs
 # def get_descs_flat(resumes):
@@ -31,38 +33,9 @@ from resume_import import load_json_resumes
 #     return descs, job_sequence_counts
 
 
-def flatten(listofentries):
-    entries = []
-    sequence_counts = []
-    total_count = 0
-    for t, entries_sublist in enumerate(listofentries):
-        entry_count = 0
-
-        for j, entry in enumerate(entries_sublist):
-            entries.append(entry)
-            entry_count += 1
-            total_count += 1
-        if entry_count != 0:
-            sequence_counts.append(entry_count)
-    return entries, sequence_counts
-
-
-def unflatten(flat_list, sublist_lens):
-    rets = []
-    idx = 0
-    for sublist_len in sublist_lens:
-        try:
-            ret = flat_list[idx:(idx+sublist_len)].tolist()
-        except AttributeError:
-            ret = flat_list[idx:(idx+sublist_len)]
-        rets.append(ret)
-        idx += sublist_len
-    return rets
-
-
 def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
     # job_descs, job_sequence_counts = get_descs_flat(resume_list)
-    jobs, job_sequence_counts = flatten(resume_list)
+    jobs, job_sequence_counts = resume_common.flatten(resume_list)
     job_descs = [ j.desc for j in jobs ]
 
     termfreq_vectorizer = CountVectorizer()
@@ -95,7 +68,7 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
     #     print lda_distrib, ", sum=", sum(lda_distrib), [d*len(desc.split()) for d in lda_distrib], len(desc.split()), desc, "\n"
 
     jobs_lda = zip(jobs, job_descs_lda)
-    jobs_lda_seq = unflatten(jobs_lda, job_sequence_counts)
+    jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
 
     # job_descs_lda_seq = unflatten(job_descs_lda, job_sequence_counts)
     # if normalized:

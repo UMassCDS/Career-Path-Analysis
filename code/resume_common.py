@@ -66,3 +66,30 @@ def detuplify(res_tup):
 
 
 
+def flatten(listofentries):
+    entries = []
+    sequence_counts = []
+    total_count = 0
+    for t, entries_sublist in enumerate(listofentries):
+        entry_count = 0
+
+        for j, entry in enumerate(entries_sublist):
+            entries.append(entry)
+            entry_count += 1
+            total_count += 1
+        if entry_count != 0:
+            sequence_counts.append(entry_count)
+    return entries, sequence_counts
+
+
+def unflatten(flat_list, sublist_lens):
+    rets = []
+    idx = 0
+    for sublist_len in sublist_lens:
+        try:
+            ret = flat_list[idx:(idx+sublist_len)].tolist()
+        except AttributeError:
+            ret = flat_list[idx:(idx+sublist_len)]
+        rets.append(ret)
+        idx += sublist_len
+    return rets
