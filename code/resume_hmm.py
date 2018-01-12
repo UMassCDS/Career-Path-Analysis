@@ -8,8 +8,10 @@ import os
 import os.path
 import numpy as np
 import multiprocessing
-from resume_lda import load_json_resumes_lda
 import scipy.special
+
+import resume_common
+from resume_lda import load_json_resumes_lda
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
@@ -51,7 +53,7 @@ def init(p_num_states, p_pi, p_gamma, p_num_topics):
     alphas = np.array([sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
 
 
-def fit(save_dir, iters, iters_lag, erase=False, num_procs=1):
+def fit(save_dir, iters, iters_lag, erase=False, num_procs=1, chunk_size=None):
     global num_sequences #, document_topic_distribs
 
     num_sequences = len([ d for d in documents if d.doc_prev is None ])
@@ -61,10 +63,11 @@ def fit(save_dir, iters, iters_lag, erase=False, num_procs=1):
         delete_progress(save_dir)
     if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
         i = load_progress(save_dir)
-        sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1, num_procs=num_procs)
+        sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1,
+                          num_procs=num_procs, chunk_size=chunk_size)
     else:
         init_doc_states()
-        sample_doc_states(save_dir, iters, iters_lag)
+        sample_doc_states(save_dir, iters, iters_lag, num_procs=num_procs, chunk_size=chunk_size)
 
 
 def init_doc_states():
@@ -101,7 +104,7 @@ def init_trans_counts(d):
         state_trans_tots[doc.state] += 1
 
 
-def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1):
+def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1, chunk_size=None):
     timing_iters = 10  # calc a moving average of time per iter over this many
     timing_start = datetime.datetime.now()
 
@@ -123,8 +126,27 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
             remove_from_trans_counts(d)
             remove_from_topic_counts(d)
 
-            args = [ (s, d) for s in range(num_states) ]
-            state_log_likes = pool.map(calc_state_log_like, args)
+            if num_procs == 1:
+                state_log_likes_chunks = [ calc_state_log_like((d, s, s+1))
+                                               for s in range(num_states) ]
+            else:
+                if chunk_size is None:
+                    chunk_size = num_states/num_procs  # this should give us a floor
+                # chunks = [ range(i, min(i+chunk_size, num_states)) for i in range(0, num_states,
+                #                                                                   chunk_size) ]
+                # args = [ (s, d) for s in range(num_states) ]
+                # arg_chunks = [ args[i:min(i+chunk_size, num_states)]  for i in range(0, num_states,
+                #                                                                      chunk_size) ]
+                # state_log_likes = pool.map(calc_state_log_like, arg_chunks)
+
+                state_chunk_starts = range(0, num_states, chunk_size)
+                state_chunk_ends = [ min(s + chunk_size, num_states) for s in state_chunk_starts ]
+                args = [(d, start, end) for start, end in zip(state_chunk_starts, state_chunk_ends) ]
+                state_log_likes_chunks = pool.map(calc_state_log_like, args)
+
+            state_log_likes, _ = resume_common.flatten(state_log_likes_chunks)
+
+            # state_log_likes = pool.map(calc_state_log_like, args)
 
             documents[d].state = sample_from_loglikes(state_log_likes)
             add_to_trans_counts(d)
@@ -137,13 +159,32 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
 
 
 def calc_state_log_like(params):
-    # s, d, doc_length, doc_prev_state, doc_next_state = params
-    s, d = params
+    d, start, end = params
+    rets = []
+    for s in range(start, end):
+        ret = calc_state_topic_log_like(s, d)
+        ret += calc_state_state_log_like(s, d)
+        rets.append(ret)
+    return rets
 
-    ret = calc_state_topic_log_like(s, d)
-    ret += calc_state_state_log_like(s, d)
-    return ret
 
+# def calc_state_log_like(param_chunk):
+#     rets = []
+#     for s, d in param_chunk:
+#         ret = calc_state_topic_log_like(s, d)
+#         ret += calc_state_state_log_like(s, d)
+#         rets.append(ret)
+#     return rets
+#
+
+# def calc_state_log_like(params):
+#     # s, d, doc_length, doc_prev_state, doc_next_state = params
+#     s, d = params
+#
+#     ret = calc_state_topic_log_like(s, d)
+#     ret += calc_state_state_log_like(s, d)
+#     return ret
+#
 
 def calc_state_topic_log_like(s, d):
     ret = 0.0
@@ -172,16 +213,26 @@ def calc_state_state_log_like(s, d):
         if doc_next_state is None:  # end of sequence
             lik = (state_trans[doc_prev_state, s] + gamma)
         else:
-            if (doc_prev_state == s) and (s == doc_next_state):
-                lik = ((state_trans[doc_prev_state, s] + gamma) *
-                       (state_trans[s, doc_next_state] + 1 + gamma) /
-                       (state_trans_tots[s] + 1 + sum_gamma))
+            if doc_prev_state == s:
+                if s == doc_next_state:
+                    lik = ((state_trans[doc_prev_state, s] + gamma) *
+                           (state_trans[s, doc_next_state] + 1 + gamma) /
+                           (state_trans_tots[s] + 1 + sum_gamma))
+                else:
+                    lik = ((state_trans[doc_prev_state, s] + gamma) *
+                           (state_trans[s, doc_next_state] + gamma) /
+                           (state_trans_tots[s] + 1 + sum_gamma))
 
-            elif doc_prev_state == s:  # and (s != doc_next.state):
-                lik = ((state_trans[doc_prev_state, s] + gamma) *
-                       (state_trans[s, doc_next_state] + gamma) /
-                       (state_trans_tots[s] + 1 + sum_gamma))
-
+            # if (doc_prev_state == s) and (s == doc_next_state):
+            #     lik = ((state_trans[doc_prev_state, s] + gamma) *
+            #            (state_trans[s, doc_next_state] + 1 + gamma) /
+            #            (state_trans_tots[s] + 1 + sum_gamma))
+            #
+            # elif doc_prev_state == s:  # and (s != doc_next.state):
+            #     lik = ((state_trans[doc_prev_state, s] + gamma) *
+            #            (state_trans[s, doc_next_state] + gamma) /
+            #            (state_trans_tots[s] + 1 + sum_gamma))
+            #
             else:  # (doc_prev.state != s)
                 lik = ((state_trans[doc_prev_state, s] + gamma) *
                        (state_trans[s, doc_next_state] + gamma) /
@@ -383,7 +434,8 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=1.0)
     parser.add_argument('--lag', type=int, default=10)
     parser.add_argument('--erase', action='store_true')
-    parser.add_argument('--procs', type=int, default=1)
+    parser.add_argument('--num_procs', type=int, default=1)
+    parser.add_argument('--proc_chunk', type=int, default=None)
 
     args = parser.parse_args()
 
@@ -396,6 +448,7 @@ if __name__ == '__main__':
 
     logging.info("fitting HMM")
     init(args.num_states, args.pi, args.gamma, num_tops)
-    fit(args.savedir, args.num_iters, args.lag, erase=args.erase, num_procs=args.procs)
+    fit(args.savedir, args.num_iters, args.lag, erase=args.erase,
+        num_procs=args.num_procs, chunk_size=args.proc_chunk)
 
     print "yo zzz"
