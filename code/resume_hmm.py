@@ -51,7 +51,7 @@ def init(p_num_states, p_pi, p_gamma, p_num_topics):
     alphas = np.array([sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
 
 
-def fit(save_dir, iters, iters_lag, erase=False):
+def fit(save_dir, iters, iters_lag, erase=False, num_procs=1):
     global num_sequences #, document_topic_distribs
 
     num_sequences = len([ d for d in documents if d.doc_prev is None ])
@@ -61,7 +61,7 @@ def fit(save_dir, iters, iters_lag, erase=False):
         delete_progress(save_dir)
     if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
         i = load_progress(save_dir)
-        sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1)
+        sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1, num_procs=num_procs)
     else:
         init_doc_states()
         sample_doc_states(save_dir, iters, iters_lag)
@@ -101,12 +101,12 @@ def init_trans_counts(d):
         state_trans_tots[doc.state] += 1
 
 
-def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0):
+def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1):
     timing_iters = 10  # calc a moving average of time per iter over this many
     timing_start = datetime.datetime.now()
 
     # create a multiprocessing pool that can be reused each iteration
-    pool = multiprocessing.Pool(processes=4)
+    pool = multiprocessing.Pool(processes=num_procs)
 
     for i in range(start_iter, iterations):
         logging.debug("iter {}".format(i))
@@ -383,6 +383,7 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=1.0)
     parser.add_argument('--lag', type=int, default=10)
     parser.add_argument('--erase', action='store_true')
+    parser.add_argument('--procs', type=int, default=1)
 
     args = parser.parse_args()
 
@@ -395,6 +396,6 @@ if __name__ == '__main__':
 
     logging.info("fitting HMM")
     init(args.num_states, args.pi, args.gamma, num_tops)
-    fit(args.savedir, args.num_iters, args.lag, erase=args.erase)
+    fit(args.savedir, args.num_iters, args.lag, erase=args.erase, num_procs=args.procs)
 
     print "yo zzz"
