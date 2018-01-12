@@ -4,6 +4,7 @@ import argparse
 import json
 import datetime
 import logging
+import collections
 import os
 import os.path
 import numpy as np
@@ -22,16 +23,17 @@ OUT_STATE_TOPICS = 'topics.tsv'
 OUT_STATES = 'states.tsv'
 
 
-def init(p_num_states, p_pi, p_gamma, num_topics):
+def init(p_num_states, p_pi, p_gamma, p_num_topics):
     # We declare these as module-level variables so they will automatically be shared
     # by subprocesses.  A bit ugly way to structure a program, but perhaps a
     # necessary micro-evil.  Possible todo: do away with ResumeHMM class restructure
     # code as a script operating on global variables.  Encapsulation is for wimps!
-    global num_states, alphas, pi, gamma, sum_alpha, sum_pi, sum_gamma, \
+    global num_states, num_topics, alphas, pi, gamma, sum_alpha, sum_pi, sum_gamma, \
         start_counts, state_trans, state_trans_tots, \
         state_topic_counts, state_topic_totals
 
     num_states = p_num_states
+    num_topics = p_num_topics
 
     pi = p_pi        # (uniform) prior on start state
     gamma = p_gamma  # (uniform) prior on state-state transitions
@@ -50,59 +52,63 @@ def init(p_num_states, p_pi, p_gamma, num_topics):
     alphas = np.array([sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
 
 
-def fit(docs, save_dir, iters, iters_lag, erase=False):
-    global num_sequences
-    num_sequences = len([ d for d in docs if d.doc_prev is None ])
+def fit(save_dir, iters, iters_lag, erase=False):
+    global num_sequences #, document_topic_distribs
+
+    num_sequences = len([ d for d in document_infos if d.doc_prev is None ])
+    # document_topic_distribs = [ d.topic_distrib for d in docs ]
 
     if erase:
         delete_progress(save_dir)
     if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
-        i = load_progress(docs, save_dir)
-        sample_doc_states(docs, save_dir, iters, iters_lag, start_iter=i+1)
+        i = load_progress(save_dir)
+        sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1)
     else:
-        init_doc_states(docs)
-        sample_doc_states(docs, save_dir, iters, iters_lag)
+        init_doc_states()
+        sample_doc_states(save_dir, iters, iters_lag)
 
 
-def init_doc_states(docs):
-    for doc in docs:
+def init_doc_states():
+    for d, doc in enumerate(document_infos):
         state_log_likes = np.zeros(num_states)
         for s in range(num_states):
-            state_log_likes[s] = init_state_log_like(doc, s) + \
-                                 calc_state_topic_log_like(s, doc.topic_distrib, doc.length)
+            state_log_likes[s] = init_state_log_like(d, s) + \
+                                 calc_state_topic_log_like(s, d)
 
-        doc.state = sample_from_loglikes(state_log_likes)
+        document_states[d] = sample_from_loglikes(state_log_likes)
+        init_trans_counts(d)
+        add_to_topic_counts(d)
 
-        init_trans_counts(doc)
-        add_to_topic_counts(doc)
 
-
-def init_state_log_like(doc, s):
+def init_state_log_like(d, s):
+    doc = document_infos[d]
     # this  is just like calc_state_state_log_like(), except we don't have access to
     # the state of doc_next while initializing, so things are a bit simpler
     if doc.doc_prev is None:  # beginning of resume sequence
         lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
     else:
-        lik = (state_trans[doc.doc_prev.state, s] + gamma)
+        lik = (state_trans[document_states[doc.doc_prev], s] + gamma)
     return math.log(lik)
 
 
-def init_trans_counts(doc):
+def init_trans_counts(d):
+    doc = document_infos[d]
+    doc_state = document_states[d]
     if doc.doc_prev is None:  # beginning of resume sequence
-        start_counts[doc.state] += 1
+        start_counts[doc_state] += 1
     else:  # middle of sequence
-        state_trans[doc.doc_prev.state, doc.state] += 1
+        state_trans[document_states[doc.doc_prev], doc_state] += 1
 
     if doc.doc_next is not None:  # not the end of sequence
-        state_trans_tots[doc.state] += 1
+        state_trans_tots[doc_state] += 1
 
 
-def sample_doc_states(docs, save_dir, iterations, lag_iters, start_iter=0):
+def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0):
     timing_iters = 10  # calc a moving average of time per iter over this many
     timing_start = datetime.datetime.now()
 
     # create a multiprocessing pool that can be reused each iteration
-    pool = multiprocessing.Pool(processes=1)
+    pool = multiprocessing.Pool(processes=4)
 
     for i in range(start_iter, iterations):
         logging.debug("iter {}".format(i))
@@ -111,51 +117,65 @@ def sample_doc_states(docs, save_dir, iterations, lag_iters, start_iter=0):
             logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
             timing_start = ts_now
 
-        for d, doc in enumerate(docs):
+        # for d, doc in enumerate(docs):
+        for d in range(len(document_infos)):
             if d % 500 == 0:
                 logging.debug("iter {}, doc {}".format(i, d))
 
-            remove_from_trans_counts(doc)
-            remove_from_topic_counts(doc)
+            remove_from_trans_counts(d)
+            remove_from_topic_counts(d)
 
-            args = [ (s, doc.topic_distrib, doc.length,
-                      doc.doc_prev.state if doc.doc_prev is not None else None,
-                      doc.doc_next.state if doc.doc_next is not None else None
-                     ) for s in range(num_states) ]
+            args = [ (s, d) for s in range(num_states) ]
             state_log_likes = pool.map(calc_state_log_like, args)
 
-            doc.state = sample_from_loglikes(state_log_likes)
-            add_to_trans_counts(doc)
-            add_to_topic_counts(doc)
+            document_states[d] = sample_from_loglikes(state_log_likes)
+            add_to_trans_counts(d)
+            add_to_topic_counts(d)
 
         if i % lag_iters == 0:
-            save_progress(i, docs, save_dir)
+            save_progress(i, save_dir)
 
     pool.terminate()
 
 
 def calc_state_log_like(params):
-    s, doc_topic_distrib, doc_length, doc_prev_state, doc_next_state = params
+    # s, d, doc_length, doc_prev_state, doc_next_state = params
+    s, d = params
 
-    ret = calc_state_topic_log_like(s, doc_topic_distrib, doc_length)
-    ret += calc_state_state_log_like(s, doc_prev_state, doc_next_state)
+    ret = calc_state_topic_log_like(s, d)
+    ret += calc_state_state_log_like(s, d)
     return ret
 
 
-def calc_state_topic_log_like(s, doc_topic_distrib, doc_length):
+def calc_state_topic_log_like(s, d):
     ret = 0.0
 
     den = alphas + state_topic_counts[s]
-    num = den + doc_topic_distrib
+    # print 1, type(alphas)
+    # print 2, type(state_topic_counts[s])
+    # print 3, type(den)
+    # print 4, type(document_topic_distribs)
+    # print 5, type(document_topic_distribs[0])
+    # print 6, type(document_topic_distribs[1])
+    # print 7, type(d)
+    # print 8, type(document_topic_distribs[d])
+
+    num = den + document_topic_distribs[d]
+
     ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
 
     ret += math.lgamma(sum_alpha + state_topic_totals[s]) - \
-           math.lgamma(sum_alpha + state_topic_totals[s] + doc_length)
+           math.lgamma(sum_alpha + state_topic_totals[s] + document_infos[d].length)
 
     return ret
 
 
-def calc_state_state_log_like(s, doc_prev_state, doc_next_state):
+def calc_state_state_log_like(s, d):
+    doc_prev = document_infos[d].doc_prev
+    doc_next = document_infos[d].doc_next
+    doc_prev_state = document_states[doc_prev] if doc_prev is not None else None
+    doc_next_state = document_states[doc_next] if doc_next is not None else None
+
     if doc_prev_state is None:  # beginning of resume sequence
         lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
         if doc_next_state is not None:  # not a singleton sequence
@@ -184,97 +204,104 @@ def calc_state_state_log_like(s, doc_prev_state, doc_next_state):
     return math.log(lik)
 
 
-def add_to_trans_counts(doc):
+def add_to_trans_counts(d):
+    doc = document_infos[d]
+    doc_state = document_states[d]
+
     if doc.doc_prev is None:  # beginning of resume sequence
-        start_counts[doc.state] += 1
+        start_counts[doc_state] += 1
         if doc.doc_next is not None:  # not a singleton sequence
-            state_trans[doc.state, doc.doc_next.state] += 1
-            state_trans_tots[doc.state] += 1
+            state_trans[doc_state, document_states[doc.doc_next]] += 1
+            state_trans_tots[doc_state] += 1
     else:  # middle of sequence
-        state_trans[doc.doc_prev.state, doc.state] += 1
+        state_trans[document_states[doc.doc_prev], doc_state] += 1
         if doc.doc_next is not None:  # not the end of sequence
-            state_trans[doc.state, doc.doc_next.state] += 1
-            state_trans_tots[doc.state] += 1
+            state_trans[doc_state, document_states[doc.doc_next]] += 1
+            state_trans_tots[doc_state] += 1
 
 
-def remove_from_trans_counts(doc):
+def remove_from_trans_counts(d):
+    doc = document_infos[d]
+    doc_state = document_states[d]
     if doc.doc_prev is None:  # beginning of resume sequence
-        start_counts[doc.state] -= 1
+        start_counts[doc_state] -= 1
         if doc.doc_next is not None:  # not a singleton sequence
-            state_trans[doc.state, doc.doc_next.state] -= 1
-            state_trans_tots[doc.state] -= 1
+            state_trans[doc_state, document_states[doc.doc_next]] -= 1
+            state_trans_tots[doc_state] -= 1
     else:  # middle of sequence
-        state_trans[doc.doc_prev.state, doc.state] -= 1
+        state_trans[document_states[doc.doc_prev], doc_state] -= 1
         if doc.doc_next is not None:  # not end of sequence
-            state_trans[doc.state, doc.doc_next.state] -= 1
-            state_trans_tots[doc.state] -= 1
+            state_trans[doc_state, document_states[doc.doc_next]] -= 1
+            state_trans_tots[doc_state] -= 1
 
 
-def add_to_topic_counts(doc):
-    state_topic_counts[doc.state] += doc.topic_distrib
-    state_topic_totals[doc.state] += doc.length
+def add_to_topic_counts(d):
+    doc_state = document_states[d]
+    state_topic_counts[doc_state] += document_topic_distribs[d]
+    state_topic_totals[doc_state] += document_infos[d].length
 
 
-def remove_from_topic_counts(doc):
-    state_topic_counts[doc.state] -= doc.topic_distrib
-    state_topic_totals[doc.state] -= doc.length
+def remove_from_topic_counts(d):
+    doc_state = document_states[d]
+    state_topic_counts[doc_state] -= document_topic_distribs[d]
+    state_topic_totals[doc_state] -= document_infos[d].length
 
 
-def save_progress(i, docs, save_dir):
+def save_progress(i, save_dir):
     ts = str(datetime.datetime.now())
 
-    # model parameters (should not change between iters)
-    params = {
-        "num_states": num_states,
-        "pi": pi,
-        "gamma": gamma,
-        "alphas": alphas.tolist(),
-        "num_sequences": num_sequences,
-    }
-    json_str = json.dumps(params)
-    append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
+    # # model parameters (should not change between iters)
+    # params = {
+    #     "num_states": num_states,
+    #     "pi": pi,
+    #     "gamma": gamma,
+    #     "alphas": alphas.tolist(),
+    #     "num_sequences": num_sequences,
+    # }
+    # json_str = json.dumps(params)
+    # append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
+    #
+    # # data structures capturing results of latest sampling iteration
+    # json_str = json.dumps(state_trans.tolist())
+    # append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
+    #
+    # json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
+    # append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
+    #
+    # json_str = json.dumps([doc.state for doc in docs])
+    # append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
+    #
+    # #todo: need to save start state counts
 
-    # data structures capturing results of latest sampling iteration
-    json_str = json.dumps(state_trans.tolist())
-    append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
 
-    json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
-    append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
-
-    json_str = json.dumps([doc.state for doc in docs])
-    append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
-
-    #todo: need to save start state counts
-
-
-def load_progress(docs, save_dir):
+def load_progress(save_dir):
     global num_states, pi, gamma, alphas, num_sequences, state_trans, state_topic_counts
 
-    ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
-    params = json.loads(json_str)
-    num_states = params["num_states"]
-    pi = params["pi"]
-    gamma = params["gamma"]
-    alphas = params["alphas"]
-    num_sequences = params["num_sequences"]
-
-    ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
-    state_trans = json.loads(json_str)
-
-    ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
-    state_topic_counts = json.loads(json_str)
-
-    ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
-    doc_states = json.loads(json_str)
-    for doc, state in zip(docs, doc_states):
-        doc.state = state
-
-    if iter_params == iter_trans == iter_topics == iter_states:
-        return iter_params
-    else:
-        sys.exit("unequal iter counts loaded")
-
-    # todo: need to load start state counts
+    # ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
+    # params = json.loads(json_str)
+    # num_states = params["num_states"]
+    # pi = params["pi"]
+    # gamma = params["gamma"]
+    # alphas = params["alphas"]
+    # num_sequences = params["num_sequences"]
+    #
+    # ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
+    # state_trans = json.loads(json_str)
+    #
+    # ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
+    # state_topic_counts = json.loads(json_str)
+    #
+    # ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
+    # doc_states = json.loads(json_str)
+    # for doc, state in zip(document_infos, document_states):
+    #     doc.state = state
+    #
+    # if iter_params == iter_trans == iter_topics == iter_states:
+    #     return iter_params
+    # else:
+    #     sys.exit("unequal iter counts loaded")
+    #
+    # # todo: need to load start state counts
 
 
 def delete_progress(save_dir):
@@ -643,15 +670,17 @@ def delete_progress(save_dir):
 #         state_topic_counts[doc.state] -= doc.topic_distrib
 #         state_topic_totals[doc.state] -= doc.length
 
-class Document(object):
-    def __init__(self, res_ent, topic_distrib, doc_prev=None, doc_next=None):
-        self.entry = res_ent
-        self.topic_distrib = np.array(topic_distrib)
-        self.doc_prev = doc_prev
-        self.doc_next = doc_next
+# class Document(object):
+#     def __init__(self, res_ent, topic_distrib, doc_prev=None, doc_next=None):
+#         self.entry = res_ent
+#         # self.topic_distrib = np.array(topic_distrib)
+#         self.doc_prev = doc_prev
+#         self.doc_next = doc_next
+#
+#         self.length = sum(topic_distrib)
+#         self.state = None
 
-        self.length = sum(self.topic_distrib)
-        self.state = None
+
 
 
 def sample_from_loglikes(state_log_likes):
@@ -780,13 +809,16 @@ def sample_from_loglikes(state_log_likes):
 
 
 
-
+DocumentInfo = collections.namedtuple('DocumentInfo', ['idx', 'doc_prev', 'doc_next', 'length'])
 
 def get_docs_from_resumes(resume_list, min_len=1):
-    docs = []
+    global document_infos, document_topic_distribs, document_states
+    document_infos = []
+    document_topic_distribs = []
 
-    debug_len_distrib = np.zeros(20, int)
+    debug_len_distrib = np.zeros(20, np.int_)
 
+    doc_idx = 0
     for r, resume in enumerate(resume_list):
         resume_len = len(resume)
         debug_len_distrib[min(19, resume_len)] += 1
@@ -794,23 +826,48 @@ def get_docs_from_resumes(resume_list, min_len=1):
             logging.debug("\t{} {}".format(r, debug_len_distrib))
 
         if resume_len < min_len:
-            pass
-        elif resume_len == 1:
-            res_ent, top_dis = resume[0]
-            docs.append(Document(res_ent, top_dis, doc_prev=None, doc_next=None))
-        else:
-            res_ent, top_dis = resume[0]
-            doc_0 = Document(res_ent, top_dis)
-            docs.append(doc_0)
-            doc_prev = doc_0
-            for res_ent, top_dis in resume[1:]:
-                doc = Document(res_ent, top_dis, doc_prev=doc_prev)
-                doc_prev.doc_next = doc
-                docs.append(doc)
-                doc_prev = doc
+            continue
 
-    logging.debug("\t{} {}".format(r, debug_len_distrib))
-    return docs
+        idxs = range(doc_idx, doc_idx + resume_len)
+        prevs = [None] + idxs[:-1]
+        nexts = idxs[1:] + [None]
+        for i, (res_ent, top_dis) in enumerate(resume):
+            document_infos.append(DocumentInfo(idxs[i], prevs[i], nexts[i], sum(top_dis)))
+            document_topic_distribs.append(np.array(top_dis))
+        doc_idx += resume_len
+
+    document_states = np.zeros(len(document_infos), np.int_)
+
+
+# def get_docs_from_resumes(resume_list, min_len=1):
+#     docs = []
+#
+#     debug_len_distrib = np.zeros(20, np.int_)
+#
+#     for r, resume in enumerate(resume_list):
+#         resume_len = len(resume)
+#         debug_len_distrib[min(19, resume_len)] += 1
+#         if r % 10000 == 0:
+#             logging.debug("\t{} {}".format(r, debug_len_distrib))
+#
+#         if resume_len < min_len:
+#             pass
+#         elif resume_len == 1:
+#             res_ent, top_dis = resume[0]
+#             docs.append(Document(res_ent, top_dis, doc_prev=None, doc_next=None))
+#         else:
+#             res_ent, top_dis = resume[0]
+#             doc_0 = Document(res_ent, top_dis)
+#             docs.append(doc_0)
+#             doc_prev = doc_0
+#             for res_ent, top_dis in resume[1:]:
+#                 doc = Document(res_ent, top_dis, doc_prev=doc_prev)
+#                 doc_prev.doc_next = doc
+#                 docs.append(doc)
+#                 doc_prev = doc
+#
+#     logging.debug("\t{} {}".format(r, debug_len_distrib))
+#     return docs
 
 
 def append_to_file(file_name, elts):
@@ -856,13 +913,14 @@ if __name__ == '__main__':
     resumes = load_json_resumes_lda(args.infile)
     num_tops = len(resumes[0][0][1])  # distrib for the first job entry in the first resume
     logging.info("extracting documents from resumes")
-    resume_docs = get_docs_from_resumes(resumes)
+    # resume_docs = get_docs_from_resumes(resumes)
+    get_docs_from_resumes(resumes)
 
     logging.info("fitting HMM")
     # hmm = ResumeHMM(args.num_states, args.pi, args.gamma, num_tops)
     # hmm.fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
 
     init(args.num_states, args.pi, args.gamma, num_tops)
-    fit(resume_docs, args.savedir, args.num_iters, args.lag, erase=args.erase)
+    fit(args.savedir, args.num_iters, args.lag, erase=args.erase)
 
     print "yo zzz"
