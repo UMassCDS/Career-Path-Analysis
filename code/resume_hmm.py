@@ -23,6 +23,23 @@ OUT_STATE_TRANS = 'trans.tsv'
 OUT_STATE_TOPICS = 'topics.tsv'
 OUT_STATES = 'states.tsv'
 
+# num_states
+# num_topics
+# alphas                1xS
+# pi
+# gamma
+# sum_alpha
+# sum_pi
+# sum_gamma
+# start_counts          1xS
+# state_trans           SxS
+# state_trans_tots      1xS
+# state_topic_counts    TxS
+# state_topic_totals    1xS
+# num_sequences
+# documents             1xD
+# document_states       1xD
+
 
 def init(p_num_states, p_pi, p_gamma, p_num_topics):
     # We declare these as module-level variables so they will automatically be shared
@@ -52,7 +69,7 @@ def init(p_num_states, p_pi, p_gamma, p_num_topics):
     alphas = np.array([sum_alpha/num_topics]*num_topics)  #zzz Why do it this way? It's 1.0!
 
 
-def fit(save_dir, iters, iters_lag, erase=False, num_procs=1, chunk_size=None):
+def fit(save_dir, iters, iters_lag, erase=False, num_procs=1):
     global num_sequences, document_states  #, document_topic_distribs
 
     num_sequences = len([ d for d in documents if d.doc_prev is None ])
@@ -63,10 +80,10 @@ def fit(save_dir, iters, iters_lag, erase=False, num_procs=1, chunk_size=None):
     if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
         i = load_progress(save_dir)
         sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1,
-                          num_procs=num_procs, chunk_size=chunk_size)
+                          num_procs=num_procs)
     else:
         init_doc_states(num_procs)
-        sample_doc_states(save_dir, iters, iters_lag, num_procs=num_procs, chunk_size=chunk_size)
+        sample_doc_states(save_dir, iters, iters_lag, num_procs=num_procs)
 
 
 def init_doc_states(num_procs):
@@ -111,6 +128,9 @@ def init_doc_states(num_procs):
     #     documents[d].state = sample_from_loglikes(state_log_likes)
     #     init_trans_counts(d)
     #     add_to_topic_counts(d)
+
+    pool.terminate()
+
 
 
 # def init_state_log_like(d, s):
@@ -161,7 +181,7 @@ def init_trans_counts(d):
         state_trans_tots[doc_state] += 1
 
 
-def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1, chunk_size=None):
+def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1):
     timing_iters = 10  # calc a moving average of time per iter over this many
     timing_start = datetime.datetime.now()
 
@@ -183,21 +203,9 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
             remove_from_trans_counts(d)
             remove_from_topic_counts(d)
 
-            # if num_procs == 1:
-            #     state_log_likes_chunks = [ calc_state_log_like((d, s, s+1))
-            #                                for s in range(num_states) ]
-            # else:
-            #     if chunk_size is None:
-            #         chunk_size = num_states/num_procs  # this should give us a floor
-            #     state_chunk_starts = range(0, num_states, chunk_size)
-            #     state_chunk_ends = [ min(s + chunk_size, num_states) for s in state_chunk_starts ]
-            #     args = [(d, start, end) for start, end in zip(state_chunk_starts, state_chunk_ends) ]
-            #     # if d % 100 == 0:
-            #     #     logging.debug(
-            #     #         "args: {}".format(args))
-            #     state_log_likes_chunks = pool.map(calc_state_log_like, args)
-            #
-            # state_log_likes, _ = resume_common.flatten(state_log_likes_chunks)  # todo: use numpy flatten
+
+            print "main:   ", state_trans[3]
+
             if num_procs == 1:
                 state_log_likes = [ calc_state_log_like((d, s)) for s in range(num_states) ]
             else:
@@ -234,6 +242,8 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
 #
 
 def calc_state_log_like(params):
+    print "in sub: ", state_trans[3]
+
     d, s = params
     return calc_state_topic_log_like(d, s) + calc_state_state_log_like(d, s)
 
@@ -459,6 +469,9 @@ def get_docs_from_resumes(resume_list, min_len=1):
         doc_idx += resume_len
 
     documents = docs
+
+    # docuent_prevs =
+
     document_states = multiprocessing.Array('i', [-1 for d in documents])
 
 
@@ -502,7 +515,6 @@ if __name__ == '__main__':
     parser.add_argument('--lag', type=int, default=10)
     parser.add_argument('--erase', action='store_true')
     parser.add_argument('--num_procs', type=int, default=1)
-    parser.add_argument('--proc_chunk', type=int, default=None)
 
     args = parser.parse_args()
 
@@ -516,6 +528,6 @@ if __name__ == '__main__':
     logging.info("fitting HMM")
     init(args.num_states, args.pi, args.gamma, num_tops)
     fit(args.savedir, args.num_iters, args.lag, erase=args.erase,
-        num_procs=args.num_procs, chunk_size=args.proc_chunk)
+        num_procs=args.num_procs)
 
     print "yo zzz"
