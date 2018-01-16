@@ -77,13 +77,13 @@ def init_doc_states(num_procs):
 
     for d in range(len(documents)):
 
-        print "\n\n\ndoc states: ", [s for s in document_states[:20]]
+        # print "\n\n\ndoc states: ", [s for s in document_states[:20]]
 
         if d % 1000 == 0:
             logging.debug("initializing doc {}/{}".format(d, len(documents) - 1))
 
         args = [(d, s) for s in range(num_states)]
-        logging.debug("{}".format(args))
+        # logging.debug("{}".format(args))
 
         # st_log_liks = pool.map(init_state_log_like, args)
         # top_log_liks = pool.map(calc_state_topic_log_like, args)
@@ -94,12 +94,12 @@ def init_doc_states(num_procs):
 
 
         new_state = sample_from_loglikes(state_log_likes)
-        print "doc ", d, " new state: ", new_state
+        # print "doc ", d, " new state: ", new_state
         document_states[d] = new_state
 
         documents[d].doc_next = 19
 
-        print "doc states after write doc", d, ": ", [s for s in document_states[:20]]
+        # print "doc states after write doc", d, ": ", [s for s in document_states[:20]]
 
         init_trans_counts(d)
         add_to_topic_counts(d)
@@ -118,29 +118,29 @@ def init_doc_states(num_procs):
 # def init_state_log_like(d, s):
 def init_state_log_like(params):
     global documents, document_states
-    print "doc states ii: ", [s for s in document_states[:20]]
-    print "doc prevs ii:  ", [doc.doc_prev for doc in documents[:20]]
-    print "doc nexts ii:  ", [doc.doc_next for doc in documents[:20]]
+    # print "doc states ii: ", [s for s in document_states[:20]]
+    # print "doc prevs ii:  ", [doc.doc_prev for doc in documents[:20]]
+    # print "doc nexts ii:  ", [doc.doc_next for doc in documents[:20]]
 
 
-    print "init", params
+    # print "init", params
     d, s = params
     doc = documents[d]
     # this  is just like calc_state_state_log_like(), except we don't have access to
     # the state of doc_next while initializing, so things are a bit simpler
     if doc.doc_prev is None:  # beginning of resume sequence
         lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
-        print d, s, "lik beg", lik
+        # print d, s, "lik beg", lik
 
     else:
 
-        print d, s, "trans", state_trans[2][1]
+        # print d, s, "trans", state_trans[2][1]
 
         doc_prev_state = document_states[doc.doc_prev]
-        print d, s, "doc prev", doc.doc_prev, "doc prev state", doc_prev_state
+        # print d, s, "doc prev", doc.doc_prev, "doc prev state", doc_prev_state
 
         lik = state_trans[document_states[doc.doc_prev], s] + gamma
-        print d, s, "lik mid", lik
+        # print d, s, "lik mid", lik
 
     loglik = math.log(lik)
 
@@ -185,21 +185,27 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
             remove_from_trans_counts(d)
             remove_from_topic_counts(d)
 
+            # if num_procs == 1:
+            #     state_log_likes_chunks = [ calc_state_log_like((d, s, s+1))
+            #                                for s in range(num_states) ]
+            # else:
+            #     if chunk_size is None:
+            #         chunk_size = num_states/num_procs  # this should give us a floor
+            #     state_chunk_starts = range(0, num_states, chunk_size)
+            #     state_chunk_ends = [ min(s + chunk_size, num_states) for s in state_chunk_starts ]
+            #     args = [(d, start, end) for start, end in zip(state_chunk_starts, state_chunk_ends) ]
+            #     # if d % 100 == 0:
+            #     #     logging.debug(
+            #     #         "args: {}".format(args))
+            #     state_log_likes_chunks = pool.map(calc_state_log_like, args)
+            #
+            # state_log_likes, _ = resume_common.flatten(state_log_likes_chunks)  # todo: use numpy flatten
             if num_procs == 1:
-                state_log_likes_chunks = [ calc_state_log_like((d, s, s+1))
-                                           for s in range(num_states) ]
+                state_log_likes = [ calc_state_log_like((d, s)) for s in range(num_states) ]
             else:
-                if chunk_size is None:
-                    chunk_size = num_states/num_procs  # this should give us a floor
-                state_chunk_starts = range(0, num_states, chunk_size)
-                state_chunk_ends = [ min(s + chunk_size, num_states) for s in state_chunk_starts ]
-                args = [(d, start, end) for start, end in zip(state_chunk_starts, state_chunk_ends) ]
-                # if d % 100 == 0:
-                #     logging.debug(
-                #         "args: {}".format(args))
-                state_log_likes_chunks = pool.map(calc_state_log_like, args)
+                args = [ (d, s) for s in range(num_states) ]
+                state_log_likes = pool.map(calc_state_log_like, args)
 
-            state_log_likes, _ = resume_common.flatten(state_log_likes_chunks)  # todo: use numpy flatten
             document_states[d] = sample_from_loglikes(state_log_likes)
             add_to_trans_counts(d)
             add_to_topic_counts(d)
@@ -210,14 +216,14 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
     pool.terminate()
 
 
-def calc_state_log_like(params):
-    d, start, end = params
-    rets = []
-    for s in range(start, end):
-        ret = calc_state_topic_log_like(d, s)
-        ret += calc_state_state_log_like(d, s)
-        rets.append(ret)
-    return rets
+# def calc_state_log_like(params):
+#     d, start, end = params
+#     rets = []
+#     for s in range(start, end):
+#         ret = calc_state_topic_log_like(d, s)
+#         ret += calc_state_state_log_like(d, s)
+#         rets.append(ret)
+#     return rets
 
 
 # def calc_state_log_like(param_chunk):
@@ -229,14 +235,10 @@ def calc_state_log_like(params):
 #     return rets
 #
 
-# def calc_state_log_like(params):
-#     # s, d, doc_length, doc_prev_state, doc_next_state = params
-#     s, d = params
-#
-#     ret = calc_state_topic_log_like(s, d)
-#     ret += calc_state_state_log_like(s, d)
-#     return ret
-#
+def calc_state_log_like(params):
+    d, s = params
+    return calc_state_topic_log_like(d, s) + calc_state_state_log_like(d, s)
+
 
 def calc_state_topic_log_like(d, s):
     ret = 0.0
