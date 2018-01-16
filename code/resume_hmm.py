@@ -97,8 +97,6 @@ def init_doc_states(num_procs):
         # print "doc ", d, " new state: ", new_state
         document_states[d] = new_state
 
-        documents[d].doc_next = 19
-
         # print "doc states after write doc", d, ": ", [s for s in document_states[:20]]
 
         init_trans_counts(d)
