@@ -53,8 +53,8 @@ def init(p_num_states, p_pi, p_gamma, p_num_topics):
     global num_states, num_topics
     global pi, gamma, sum_pi, sum_gamma
     global alphas, sum_alpha
-    global start_counts, state_trans, state_trans_tots
-    global state_topic_counts, state_topic_totals
+    # global start_counts, state_trans, state_trans_tots
+    # global state_topic_counts, state_topic_totals
 
     num_states = p_num_states
     num_topics = p_num_topics
@@ -65,17 +65,14 @@ def init(p_num_states, p_pi, p_gamma, p_num_topics):
     sum_gamma = gamma*num_states
 
     sum_alpha = num_topics
-    alphas = multiprocessing.Array(ctypes.c_double, [sum_alpha/num_topics]*num_topics)  # zzz Why do it this way? It's 1.0!
+    # alphas = multiprocessing.Array(ctypes.c_double, [sum_alpha/num_topics]*num_topics)  # zzz Why do it this way? It's 1.0!
+    alphas = np.array([sum_alpha/num_topics]*num_topics, ctypes.c_double)
 
-    start_counts = multiprocessing.Array(ctypes.c_int, [0]*num_states)
-    # See: https://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-multiprocessing
-    state_trans_base = multiprocessing.Array(ctypes.c_int, [0]*num_states*num_states)
-    state_trans = wrap_global_array(state_trans_base, (num_states, num_states))
+    # start_counts = multiprocessing.Array(ctypes.c_int, [0]*num_states)
+    # # See: https://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-multiprocessing
+    # state_trans_base = multiprocessing.Array(ctypes.c_int, [0]*num_states*num_states)
+    # state_trans = wrap_global_array(state_trans_base, (num_states, num_states))
     state_trans_tots = multiprocessing.Array(ctypes.c_int, [0]*num_states)
-
-    state_topic_counts_base = multiprocessing.Array(ctypes.c_double, [0.0]*num_states*num_topics)
-    state_topic_counts = wrap_global_array(state_topic_counts_base, (num_states, num_topics))
-    state_topic_totals = multiprocessing.Array(ctypes.c_double, [0]*num_states)
 
 
 def fit(save_dir, iters, iters_lag, erase=False, num_procs=1):
@@ -86,11 +83,23 @@ def fit(save_dir, iters, iters_lag, erase=False, num_procs=1):
         sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1,
                           num_procs=num_procs)
     else:
-        init_doc_states(num_procs)
-        sample_doc_states(save_dir, iters, iters_lag, num_procs=num_procs)
+        state_topic_counts = np.zeros((num_states, num_topics), ctypes.c_double)
+        state_topic_totals = np.zeros(num_states, ctypes.c_double)
+
+        start_counts = np.zeros(num_states, ctypes.c_int)
+        state_trans = np.zeros((num_states, num_states), ctypes.c_int)
+        state_trans_tots = np.zeros(num_states, ctypes.c_int)
+
+        init_doc_states(start_counts, state_trans, state_trans_tots,
+                        state_topic_counts, state_topic_totals, num_procs)
+        sample_doc_states(save_dir, iters, iters_lag,
+                          start_counts, state_trans, state_trans_tots,
+                          state_topic_counts, state_topic_totals,
+                          num_procs=num_procs)
 
 
-def init_doc_states(num_procs):
+def init_doc_states(start_counts, state_trans, state_trans_tots,
+                    state_topic_counts, state_topic_totals, num_procs):
     global document_states
 
     logging.debug("initializing states for {} documents".format(num_documents))
@@ -102,7 +111,16 @@ def init_doc_states(num_procs):
         if d % 1000 == 0:
             logging.debug("initializing doc {}/{}".format(d, num_documents - 1))
 
-        args = [(d, s) for s in range(num_states)]
+
+        args = [(state_topic_counts[s],
+                 state_topic_totals[s],
+                 document_topic_distribs[d],
+                 document_lens[d],
+
+                 start_counts[s],
+                 state_trans[document_prevs[s], s] if document_prevs[s] != NULL_DOC else None
+                ) for s in range(num_states)]
+
         # logging.debug("{}".format(args))
 
         # st_log_liks = pool.map(init_state_log_like, args)
@@ -118,8 +136,8 @@ def init_doc_states(num_procs):
 
         # print "doc states after write doc", d, ": ", [s for s in document_states[:20]]
 
-        init_trans_counts(d)
-        add_to_topic_counts(d)
+        init_trans_counts(d, start_counts, state_trans, state_trans_tots)
+        add_to_topic_counts(d, state_topic_counts, state_topic_totals)
 
     # for d, doc in enumerate(documents):
     #     state_log_likes = np.zeros(num_states)
@@ -166,24 +184,28 @@ def init_state_log_like(params):
     #
     # loglik += calc_state_topic_log_like(d, s)
 
-    d, s = params
-    doc_prev = document_prevs[d]
+    # d, s = params
+    topic_counts, topic_total, topic_distrib, doc_len, start_count, state_trans_prev = params
+
+    # doc_prev = document_prevs[d]
 
     # this  is just like calc_state_state_log_like(), except we don't have access to
     # the state of doc_next while initializing, so things are a bit simpler
-    if doc_prev == NULL_DOC:  # beginning of resume sequence
-        lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
+    # if doc_prev == NULL_DOC:  # beginning of resume sequence
+    if state_trans_prev is None:
+        lik = (start_count + pi) / (num_sequences - 1 + sum_pi)
     else:
-        doc_prev_state = document_states[doc_prev]
-        lik = state_trans[doc_prev_state, s] + gamma
+        # doc_prev_state = document_states[doc_prev]
+        # lik = state_trans[doc_prev_state, s] + gamma
+        lik = state_trans_prev + gamma
     loglik = math.log(lik)
 
-    loglik += calc_state_topic_log_like(d, s)
+    loglik += calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
     return loglik
 
 
-def init_trans_counts(d):
-    global start_counts, state_trans, state_trans_tots
+def init_trans_counts(d, start_counts, state_trans, state_trans_tots):
+    # global start_counts, state_trans, state_trans_tots
 
     doc_state = document_states[d]
     doc_prev = document_prevs[d]
@@ -197,7 +219,10 @@ def init_trans_counts(d):
         state_trans_tots[doc_state] += 1
 
 
-def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1):
+def sample_doc_states(save_dir, iterations, lag_iters,
+                      start_counts, state_trans, state_trans_tots,
+                      state_topic_counts, state_topic_totals,
+                      start_iter=0, num_procs=1):
     timing_iters = 10  # calc a moving average of time per iter over this many
     timing_start = datetime.datetime.now()
 
@@ -216,21 +241,33 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
             if d % 1000 == 0:
                 logging.debug("iter {}/{}, doc {}/{}".format(i, iterations-1, d, num_documents-1))
 
-            remove_from_trans_counts(d)
-            remove_from_topic_counts(d)
+            remove_from_trans_counts(d, start_counts, state_trans, state_trans_tots)
+            remove_from_topic_counts(d, state_topic_counts, state_topic_totals)
 
-            if num_procs == 1:
-                state_log_likes = [ calc_state_log_like((d, s)) for s in range(num_states) ]
-            else:
-                args = [ (d, s) for s in range(num_states) ]
-                state_log_likes = pool.map(calc_state_log_like, args)
+            # if num_procs == 1:
+            #     state_log_likes = [ calc_state_log_like((d, s)) for s in range(num_states) ]
+            # else:
+            #     args = [ (d, s) for s in range(num_states) ]
+            #     state_log_likes = pool.map(calc_state_log_like, args)
+
+            args = [ (state_topic_counts[s],
+                      state_topic_totals[s],
+                      np.array(document_topic_distribs[d]),
+                      document_lens[d],
+
+                      start_counts[s], s, document_prevs[s], document_nexts[s],
+                      state_trans[document_prevs[s], s] if document_prevs[s] != NULL_DOC else None,
+                      state_trans[document_nexts[s], s] if document_nexts[s] != NULL_DOC else None,
+                      state_trans_tots[s]) for s in range(num_states) ]
+            state_log_likes = pool.map(calc_state_log_like, args)
+
 
             document_states[d] = sample_from_loglikes(state_log_likes)
-            add_to_trans_counts(d)
-            add_to_topic_counts(d)
+            add_to_trans_counts(d, start_counts, state_trans, state_trans_tots)
+            add_to_topic_counts(d, state_topic_counts, state_topic_totals)
 
         if i % lag_iters == 0:
-            save_progress(i, save_dir)
+            save_progress(i, save_dir, state_topic_counts, start_counts, state_trans)
 
     pool.terminate()
 
@@ -255,55 +292,65 @@ def sample_doc_states(save_dir, iterations, lag_iters, start_iter=0, num_procs=1
 #
 
 def calc_state_log_like(params):
-    d, s = params
-    return calc_state_topic_log_like(d, s) + calc_state_state_log_like(d, s)
+    topic_counts, topic_total, topic_distrib, doc_len, \
+    start_count, s, state_prev, state_next, \
+    state_trans_prev, state_trans_next, state_trans_tot = params
 
-
-def calc_state_topic_log_like(d, s):
     ret = 0.0
-
-    den = alphas + state_topic_counts[s]
-    num = den + document_topic_distribs[d]
-    ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
-
-    ret += math.lgamma(sum_alpha + state_topic_totals[s]) - \
-           math.lgamma(sum_alpha + state_topic_totals[s] + document_lens[d])
+    ret += calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
+    ret += calc_state_state_log_like(start_count, s, state_prev, state_next,
+                              state_trans_prev, state_trans_next, state_trans_tot)
     return ret
 
 
-def calc_state_state_log_like(d, s):
-    doc_prev = document_prevs[d]
-    doc_next = document_nexts[d]
-    doc_prev_state = document_states[doc_prev] if doc_prev != NULL_DOC else None
-    doc_next_state = document_states[doc_next] if doc_next != NULL_DOC else None
+def calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len):
+    ret = 0.0
 
-    if doc_prev_state is None:  # beginning of resume sequence
-        lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
-        if doc_next_state is not None:  # not a singleton sequence
-            lik *= state_trans[s, doc_next_state] + gamma
+    den = alphas + topic_counts
+    num = den + topic_distrib
+    ret += np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den))
+
+    ret += math.lgamma(sum_alpha + topic_total) - \
+           math.lgamma(sum_alpha + topic_total + doc_len)
+    return ret
+
+
+def calc_state_state_log_like(start_count, s, state_prev, state_next,
+                              state_trans_prev, state_trans_next, state_trans_tot):
+    # print "d: ", d
+
+    # doc_prev = document_prevs[d]
+    # doc_next = document_nexts[d]
+    # doc_prev_state = document_states[doc_prev] if doc_prev != NULL_DOC else None
+    # doc_next_state = document_states[doc_next] if doc_next != NULL_DOC else None
+
+    if state_trans_prev is None:  # beginning of resume sequence
+        lik = (start_count + pi) / (num_sequences - 1 + sum_pi)
+        if state_trans_next is not None:  # not a singleton sequence
+            lik *= state_trans_next + gamma
 
     else:  # middle of sequence
-        if doc_next_state is None:  # end of sequence
-            lik = (state_trans[doc_prev_state, s] + gamma)
+        if state_trans_next is None:  # end of sequence
+            lik = state_trans_prev + gamma
         else:
-            if doc_prev_state == s:
-                if s == doc_next_state:
-                    lik = ((state_trans[doc_prev_state, s] + gamma) *
-                           (state_trans[s, doc_next_state] + 1 + gamma) /
-                           (state_trans_tots[s] + 1 + sum_gamma))
+            if state_prev == s:
+                if s == state_next:
+                    lik = ((state_trans_prev + gamma) *
+                           (state_trans_next + 1 + gamma) /
+                           (state_trans_tot + 1 + sum_gamma))
                 else:
-                    lik = ((state_trans[doc_prev_state, s] + gamma) *
-                           (state_trans[s, doc_next_state] + gamma) /
-                           (state_trans_tots[s] + 1 + sum_gamma))
+                    lik = ((state_trans_prev + gamma) *
+                           (state_trans_next + gamma) /
+                           (state_trans_tot + 1 + sum_gamma))
             else:  # (doc_prev.state != s)
-                lik = ((state_trans[doc_prev_state, s] + gamma) *
-                       (state_trans[s, doc_next_state] + gamma) /
-                       (state_trans_tots[s] + sum_gamma))
+                lik = ((state_trans_prev + gamma) *
+                       (state_trans_next + gamma) /
+                       (state_trans_tot + sum_gamma))
     # print "lik for state ", s, "(", trace, ")", ": ", lik
     return math.log(lik)
 
 
-def add_to_trans_counts(d):
+def add_to_trans_counts(d, start_counts, state_trans, state_trans_tots):
     doc_state = document_states[d]
     doc_prev = document_prevs[d]
     doc_next = document_nexts[d]
@@ -320,8 +367,7 @@ def add_to_trans_counts(d):
             state_trans_tots[doc_state] += 1
 
 
-def remove_from_trans_counts(d):
-    global state_trans, state_trans_tots
+def remove_from_trans_counts(d, start_counts, state_trans, state_trans_tots):
     doc_state = document_states[d]
     doc_prev = document_prevs[d]
     doc_next = document_nexts[d]
@@ -338,21 +384,21 @@ def remove_from_trans_counts(d):
             state_trans_tots[doc_state] -= 1
 
 
-def add_to_topic_counts(d):
-    global state_topic_counts, state_topic_totals
+def add_to_topic_counts(d, state_topic_counts, state_topic_totals):
+    # global state_topic_counts, state_topic_totals
     doc_state = document_states[d]
     state_topic_counts[doc_state] += document_topic_distribs[d]
     state_topic_totals[doc_state] += document_lens[d]
 
 
-def remove_from_topic_counts(d):
-    global state_topic_counts, state_topic_totals
+def remove_from_topic_counts(d, state_topic_counts, state_topic_totals):
+    # global state_topic_counts, state_topic_totals
     doc_state = document_states[d]
     state_topic_counts[doc_state] -= document_topic_distribs[d]
     state_topic_totals[doc_state] -= document_lens[d]
 
 
-def save_progress(i, save_dir):
+def save_progress(i, save_dir, state_topic_counts, start_counts, state_trans):
     ts = str(datetime.datetime.now())
 
     # model parameters (should not change between iters)
@@ -367,8 +413,9 @@ def save_progress(i, save_dir):
     append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
 
     # data structures capturing results of latest sampling iteration
-    json_str = json.dumps([c for c in start_counts])
-    append_to_file(os.path.join(save_dir, OUT_START_COUNTS), [ts, i, json_str])
+    #zzz todo fix!
+    # json_str = json.dumps([c for c in start_counts])
+    # append_to_file(os.path.join(save_dir, OUT_START_COUNTS), [ts, i, json_str])
 
     json_str = json.dumps(state_trans.tolist())
     append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
@@ -380,8 +427,9 @@ def save_progress(i, save_dir):
     append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
 
 
-def load_progress(save_dir):
-    global num_states, pi, gamma, alphas, num_sequences, start_counts, state_trans, state_topic_counts, document_states
+def load_progress(save_dir, state_topic_counts, start_counts, state_trans):
+    # global num_states, pi, gamma, alphas, num_sequences, start_counts, state_trans, state_topic_counts, document_states
+    global num_states, pi, gamma, alphas, num_sequences, document_states
 
     ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
     params = json.loads(json_str)
@@ -395,9 +443,11 @@ def load_progress(save_dir):
     start_counts = np.array(json.loads(json_str), np.int_)
 
     ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
+    # zzz todo: this is broken
     state_trans = np.array(json.loads(json_str), np.int_)
 
     ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
+    #zzz todo: this is broken
     state_topic_counts = [ np.array(lst) for lst in json.loads(json_str) ]
 
     ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
