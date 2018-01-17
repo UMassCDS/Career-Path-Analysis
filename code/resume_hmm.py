@@ -570,14 +570,20 @@ def get_docs_from_resumes(resume_list, min_len=1):
     # document_nexts = wrap_global_array(document_nexts_base, doc_idx)
 
     # See: https://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-multiprocessing
-    document_topic_distribs_base = multiprocessing.Array(ctypes.c_double,
-                                                         np.ravel(doc_topic_distribs))
-    document_topic_distribs = wrap_global_array(document_topic_distribs_base, (doc_idx, -1))
+    # document_topic_distribs_base = multiprocessing.Array(ctypes.c_double,
+    #                                                      np.ravel(doc_topic_distribs))
+    # document_topic_distribs = wrap_global_array(document_topic_distribs_base, (doc_idx, -1))
 
-    document_prevs = multiprocessing.Array('i', doc_prevs)
-    document_nexts = multiprocessing.Array('i', doc_nexts)
-    document_lens = multiprocessing.Array(ctypes.c_double, doc_lens)
-    document_states = multiprocessing.Array('i', [-1]*doc_idx)
+    document_topic_distribs = np.array(doc_topic_distribs, np.double)
+
+    # document_prevs = multiprocessing.Array('i', doc_prevs)
+    # document_nexts = multiprocessing.Array('i', doc_nexts)
+    # document_lens = multiprocessing.Array(ctypes.c_double, doc_lens)
+    # document_states = multiprocessing.Array('i', [-1]*doc_idx)
+    document_prevs = np.array(doc_prevs, np.int)
+    document_nexts = np.array(doc_nexts, np.int)
+    document_lens = np.array(doc_lens, np.int)
+    document_states = np.array([-1]*doc_idx, np.int)
 
     num_documents = doc_idx
     num_sequences = res_count
