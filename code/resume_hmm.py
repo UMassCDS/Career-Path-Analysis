@@ -5,14 +5,14 @@ import json
 import datetime
 import logging
 import os
-import ctypes
+# import ctypes
 import os.path
 import numpy as np
 import multiprocessing
 import scipy.special
 
-import resume_common
-from resume_lda import load_json_resumes_lda
+# import resume_common
+from resume_lda import load_json_resumes_lda, scan_json_resumes_lda
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
@@ -25,6 +25,14 @@ OUT_STATE_TOPICS = 'topics.tsv'
 OUT_STATES = 'states.tsv'
 
 NULL_DOC = -1  # we use c-type arrays to capture prev and next docs, so use this in place of None
+
+# these are declared locally so they'll be available to subprocesses for free
+pi = 0.0        # (uniform) prior on start state
+gamma = 0.0     # (uniform) prior on state-state transitions
+sum_pi = 0.0
+sum_gamma = 0.0
+alphas = []     # prior on topic distrib
+sum_alpha = 0.0
 
 # num_states
 # num_topics
@@ -46,230 +54,332 @@ NULL_DOC = -1  # we use c-type arrays to capture prev and next docs, so use this
 # document_states       1xD
 
 
-def init(p_num_states, p_pi, p_gamma, p_num_topics):
-    # We declare these as module-level variables in order to be shared by subprocesses.
-    # A bit of an ugly way to structure a program, but perhaps a necessary micro-evil.
-    # Encapsulation is for wimps!
-    global num_states, num_topics
-    global pi, gamma, sum_pi, sum_gamma
-    global alphas, sum_alpha
-    # global start_counts, state_trans, state_trans_tots
-    # global state_topic_counts, state_topic_totals
+class ResumeHmm(object):
+    def __init__(self, p_num_states, p_pi, p_gamma, p_num_topics):
+        global pi, gamma, sum_pi, sum_gamma, alphas, sum_alpha
+        pi = p_pi        # (uniform) prior on start state
+        gamma = p_gamma  # (uniform) prior on state-state transitions
+        sum_pi = p_pi*p_num_states
+        sum_gamma = p_gamma*p_num_states
 
-    num_states = p_num_states
-    num_topics = p_num_topics
+        self.num_states = p_num_states
+        self.num_topics = p_num_topics
 
-    pi = p_pi        # (uniform) prior on start state
-    gamma = p_gamma  # (uniform) prior on state-state transitions
-    sum_pi = pi*num_states
-    sum_gamma = gamma*num_states
+        sum_alpha = self.num_topics
+        alphas = np.array([sum_alpha/self.num_topics]*self.num_topics, np.double)
 
-    sum_alpha = num_topics
-    # alphas = multiprocessing.Array(ctypes.c_double, [sum_alpha/num_topics]*num_topics)  # zzz Why do it this way? It's 1.0!
-    alphas = np.array([sum_alpha/num_topics]*num_topics, ctypes.c_double)
+    def fit(self, save_dir, iters, iters_lag, pool, erase=False):
+        if erase:
+            self.delete_progress(save_dir)
+        if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
+            i = self.load_progress(save_dir)
+            self.sample_doc_states(save_dir, iters, iters_lag, pool, start_iter=i+1)
+        else:
+            self.state_topic_counts = np.zeros((self.num_states, self.num_topics), np.double)
+            self.state_topic_totals = np.zeros(self.num_states, np.double)
 
-    # start_counts = multiprocessing.Array(ctypes.c_int, [0]*num_states)
-    # # See: https://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-multiprocessing
-    # state_trans_base = multiprocessing.Array(ctypes.c_int, [0]*num_states*num_states)
-    # state_trans = wrap_global_array(state_trans_base, (num_states, num_states))
-    state_trans_tots = multiprocessing.Array(ctypes.c_int, [0]*num_states)
+            self.start_counts = np.zeros(self.num_states, np.int)
+            self.state_trans = np.zeros((self.num_states, self.num_states), np.int)
+            self.state_trans_tots = np.zeros(self.num_states, np.int)
 
+            self.init_doc_states(pool)
 
-def fit(save_dir, iters, iters_lag, erase=False, num_procs=1):
-    if erase:
-        delete_progress(save_dir)
-    if os.path.isfile(os.path.join(save_dir, OUT_PARAMS)):
-        i = load_progress(save_dir)
-        sample_doc_states(save_dir, iters, iters_lag, start_iter=i+1,
-                          num_procs=num_procs)
-    else:
-        state_topic_counts = np.zeros((num_states, num_topics), ctypes.c_double)
-        state_topic_totals = np.zeros(num_states, ctypes.c_double)
+            self.sample_doc_states(save_dir, iters, iters_lag, pool)
 
-        start_counts = np.zeros(num_states, ctypes.c_int)
-        state_trans = np.zeros((num_states, num_states), ctypes.c_int)
-        state_trans_tots = np.zeros(num_states, ctypes.c_int)
+    def init_doc_states(self, pool):
+        logging.debug("initializing states for {} documents".format(self.num_docs))
 
-        init_doc_states(start_counts, state_trans, state_trans_tots,
-                        state_topic_counts, state_topic_totals, num_procs)
-        sample_doc_states(save_dir, iters, iters_lag,
-                          start_counts, state_trans, state_trans_tots,
-                          state_topic_counts, state_topic_totals,
-                          num_procs=num_procs)
+        # pool = multiprocessing.Pool(processes=num_procs)
 
-
-def init_doc_states(start_counts, state_trans, state_trans_tots,
-                    state_topic_counts, state_topic_totals, num_procs):
-    global document_states
-
-    logging.debug("initializing states for {} documents".format(num_documents))
-    pool = multiprocessing.Pool(processes=num_procs)
-    for d in range(num_documents):
-
-        # print "\n\n\ndoc states: ", [s for s in document_states[:20]]
-
-        if d % 1000 == 0:
-            logging.debug("initializing doc {}/{}".format(d, num_documents - 1))
-
-
-        args = [(state_topic_counts[s],
-                 state_topic_totals[s],
-                 document_topic_distribs[d],
-                 document_lens[d],
-
-                 start_counts[s],
-                 state_trans[document_prevs[s], s] if document_prevs[s] != NULL_DOC else None
-                ) for s in range(num_states)]
-
-        # logging.debug("{}".format(args))
-
-        # st_log_liks = pool.map(init_state_log_like, args)
-        # top_log_liks = pool.map(calc_state_topic_log_like, args)
-        #
-        # state_log_likes = [s+t for s, t in zip(st_log_liks, top_log_liks)]
-
-        state_log_likes = pool.map(init_state_log_like, args)
-
-        new_state = sample_from_loglikes(state_log_likes)
-        # print "doc ", d, " new state: ", new_state
-        document_states[d] = new_state
-
-        # print "doc states after write doc", d, ": ", [s for s in document_states[:20]]
-
-        init_trans_counts(d, start_counts, state_trans, state_trans_tots)
-        add_to_topic_counts(d, state_topic_counts, state_topic_totals)
-
-    # for d, doc in enumerate(documents):
-    #     state_log_likes = np.zeros(num_states)
-    #     for s in range(num_states):
-    #         state_log_likes[s] = init_state_log_like(d, s) + \
-    #                              calc_state_topic_log_like(s, d)
-    #
-    #     documents[d].state = sample_from_loglikes(state_log_likes)
-    #     init_trans_counts(d)
-    #     add_to_topic_counts(d)
-
-    pool.terminate()
-
-
-
-# def init_state_log_like(d, s):
-def init_state_log_like(params):
-    # # global documents, document_states
-    # # print "doc states ii: ", [s for s in document_states[:20]]
-    # # print "doc prevs ii:  ", [doc.doc_prev for doc in documents[:20]]
-    # # print "doc nexts ii:  ", [doc.doc_next for doc in documents[:20]]
-    # # print "init", params
-    # d, s = params
-    #
-    # doc = documents[d]
-    # # this  is just like calc_state_state_log_like(), except we don't have access to
-    # # the state of doc_next while initializing, so things are a bit simpler
-    # if doc.doc_prev is None:  # beginning of resume sequence
-    #     lik = (start_counts[s] + pi) / (num_sequences - 1 + sum_pi)
-    #     # print d, s, "lik beg", lik
-    #
-    # else:
-    #
-    #     # print d, s, "trans", state_trans[2][1]
-    #
-    #     doc_prev_state = document_states[doc.doc_prev]
-    #     # print d, s, "doc prev", doc.doc_prev, "doc prev state", doc_prev_state
-    #
-    #     lik = state_trans[document_states[doc.doc_prev], s] + gamma
-    #     # print d, s, "lik mid", lik
-    #
-    # loglik = math.log(lik)
-    #
-    #
-    # loglik += calc_state_topic_log_like(d, s)
-
-    # d, s = params
-    topic_counts, topic_total, topic_distrib, doc_len, start_count, state_trans_prev = params
-
-    # doc_prev = document_prevs[d]
-
-    # this  is just like calc_state_state_log_like(), except we don't have access to
-    # the state of doc_next while initializing, so things are a bit simpler
-    # if doc_prev == NULL_DOC:  # beginning of resume sequence
-    if state_trans_prev is None:
-        lik = (start_count + pi) / (num_sequences - 1 + sum_pi)
-    else:
-        # doc_prev_state = document_states[doc_prev]
-        # lik = state_trans[doc_prev_state, s] + gamma
-        lik = state_trans_prev + gamma
-    loglik = math.log(lik)
-
-    loglik += calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
-    return loglik
-
-
-def init_trans_counts(d, start_counts, state_trans, state_trans_tots):
-    # global start_counts, state_trans, state_trans_tots
-
-    doc_state = document_states[d]
-    doc_prev = document_prevs[d]
-    doc_next = document_nexts[d]
-    if doc_prev == NULL_DOC:  # beginning of resume sequence
-        start_counts[doc_state] += 1
-    else:  # middle of sequence
-        state_trans[document_states[doc_prev], doc_state] += 1
-
-    if doc_next != NULL_DOC:  # not the end of sequence
-        state_trans_tots[doc_state] += 1
-
-
-def sample_doc_states(save_dir, iterations, lag_iters,
-                      start_counts, state_trans, state_trans_tots,
-                      state_topic_counts, state_topic_totals,
-                      start_iter=0, num_procs=1):
-    timing_iters = 10  # calc a moving average of time per iter over this many
-    timing_start = datetime.datetime.now()
-
-    # create a multiprocessing pool that can be reused each iteration
-    pool = multiprocessing.Pool(processes=num_procs)
-
-    for i in range(start_iter, iterations):
-        logging.debug("iter {}".format(i))
-        if i % timing_iters == 0:
-            ts_now = datetime.datetime.now()
-            logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
-            timing_start = ts_now
-
-        # for d, doc in enumerate(docs):
-        for d in range(num_documents):
+        for d in range(self.num_docs):
             if d % 1000 == 0:
-                logging.debug("iter {}/{}, doc {}/{}".format(i, iterations-1, d, num_documents-1))
+                logging.debug("initializing doc {}/{}".format(d, self.num_docs - 1))
 
-            remove_from_trans_counts(d, start_counts, state_trans, state_trans_tots)
-            remove_from_topic_counts(d, state_topic_counts, state_topic_totals)
+            args = [(self.state_topic_counts[s],
+                     self.state_topic_totals[s],
+                     self.doc_topic_distribs[d],
+                     self.doc_lens[d],
+                     self.start_counts[s],
+                     self.num_sequences,
+                     self.state_trans[self.doc_prevs[s], s] if self.doc_prevs[s] != NULL_DOC else None
+                    ) for s in range(self.num_states)]
 
-            # if num_procs == 1:
-            #     state_log_likes = [ calc_state_log_like((d, s)) for s in range(num_states) ]
-            # else:
-            #     args = [ (d, s) for s in range(num_states) ]
-            #     state_log_likes = pool.map(calc_state_log_like, args)
+            state_log_likes = pool.map(init_state_log_like, args)
+            new_state = sample_from_loglikes(state_log_likes)
+            self.doc_states[d] = new_state
 
-            args = [ (state_topic_counts[s],
-                      state_topic_totals[s],
-                      np.array(document_topic_distribs[d]),
-                      document_lens[d],
+            self.init_trans_counts(d)
+            self.add_to_topic_counts(d)
 
-                      start_counts[s], s, document_prevs[s], document_nexts[s],
-                      state_trans[document_prevs[s], s] if document_prevs[s] != NULL_DOC else None,
-                      state_trans[document_nexts[s], s] if document_nexts[s] != NULL_DOC else None,
-                      state_trans_tots[s]) for s in range(num_states) ]
-            state_log_likes = pool.map(calc_state_log_like, args)
+        # pool.terminate()
+
+    def init_trans_counts(self, d):
+        doc_state = self.doc_states[d]
+        doc_prev = self.doc_prevs[d]
+        doc_next = self.doc_nexts[d]
+        if doc_prev == NULL_DOC:  # beginning of resume sequence
+            self.start_counts[doc_state] += 1
+        else:  # middle of sequence
+            self.state_trans[self.doc_states[doc_prev], doc_state] += 1
+
+        if doc_next != NULL_DOC:  # not the end of sequence
+            self.state_trans_tots[doc_state] += 1
+
+    # def sample_doc_states(self, save_dir, iterations, lag_iters, start_iter=0, num_procs=1):
+    def sample_doc_states(self, save_dir, iterations, lag_iters, pool, start_iter=0):
+        timing_iters = 10  # calc a moving average of time per iter over this many
+        timing_start = datetime.datetime.now()
+
+        # # create a multiprocessing pool that can be reused each iteration
+        # pool = multiprocessing.Pool(processes=num_procs)
+        #
+        for i in range(start_iter, iterations):
+            logging.debug("iter {}".format(i))
+            if i % timing_iters == 0:
+                ts_now = datetime.datetime.now()
+                logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
+                timing_start = ts_now
+
+            # for d, doc in enumerate(docs):
+            for d in range(self.num_docs):
+                if d % 1000 == 0:
+                    logging.debug("iter {}/{}, doc {}/{}".format(i, iterations-1, d, self.num_docs-1))
+
+                self.remove_from_trans_counts(d)
+                self.remove_from_topic_counts(d)
+
+                # if num_procs == 1:
+                #     state_log_likes = [ calc_state_log_like((d, s)) for s in range(num_states) ]
+                # else:
+                #     args = [ (d, s) for s in range(num_states) ]
+                #     state_log_likes = pool.map(calc_state_log_like, args)
+
+                args = [ (self.state_topic_counts[s],
+                          self.state_topic_totals[s],
+                          np.array(self.doc_topic_distribs[d]),
+                          self.doc_lens[d],
+
+                          self.start_counts[s], self.num_sequences, s, self.doc_prevs[s], self.doc_nexts[s],
+                          self.state_trans[self.doc_prevs[s], s] if self.doc_prevs[s] != NULL_DOC else None,
+                          self.state_trans[self.doc_nexts[s], s] if self.doc_nexts[s] != NULL_DOC else None,
+                          self.state_trans_tots[s]) for s in range(self.num_states) ]
+                state_log_likes = pool.map(calc_state_log_like, args)
+
+                self.doc_states[d] = sample_from_loglikes(state_log_likes)
+                self.add_to_trans_counts(d)
+                self.add_to_topic_counts(d)
+
+            if i % lag_iters == 0:
+                self.save_progress(i, save_dir)
+
+        # pool.terminate()
+
+    def add_to_trans_counts(self, d):
+        doc_state = self.doc_states[d]
+        doc_prev = self.doc_prevs[d]
+        doc_next = self.doc_nexts[d]
+
+        if doc_prev == NULL_DOC:  # beginning of resume sequence
+            self.start_counts[doc_state] += 1
+            if doc_next != NULL_DOC:  # not a singleton sequence
+                self.state_trans[doc_state, self.doc_states[doc_next]] += 1
+                self.state_trans_tots[doc_state] += 1
+        else:  # middle of sequence
+            self.state_trans[self.doc_states[doc_prev], doc_state] += 1
+            if doc_next != NULL_DOC:  # not the end of sequence
+                self.state_trans[doc_state, self.doc_states[doc_next]] += 1
+                self.state_trans_tots[doc_state] += 1
+
+    def remove_from_trans_counts(self, d):
+        doc_state = self.doc_states[d]
+        doc_prev = self.doc_prevs[d]
+        doc_next = self.doc_nexts[d]
+
+        if doc_prev == NULL_DOC:  # beginning of resume sequence
+            self.start_counts[doc_state] -= 1
+            if doc_next != NULL_DOC:  # not a singleton sequence
+                self.state_trans[doc_state, self.doc_states[doc_next]] -= 1
+                self.state_trans_tots[doc_state] -= 1
+        else:  # middle of sequence
+            self.state_trans[self.doc_states[doc_prev], doc_state] -= 1
+            if doc_next != NULL_DOC:  # not end of sequence
+                self.state_trans[doc_state, self.doc_states[doc_next]] -= 1
+                self.state_trans_tots[doc_state] -= 1
+
+    def add_to_topic_counts(self, d):
+        doc_state = self.doc_states[d]
+        self.state_topic_counts[doc_state] += self.doc_topic_distribs[d]
+        self.state_topic_totals[doc_state] += self.doc_lens[d]
+
+    def remove_from_topic_counts(self, d):
+        doc_state = self.doc_states[d]
+        self.state_topic_counts[doc_state] -= self.doc_topic_distribs[d]
+        self.state_topic_totals[doc_state] -= self.doc_lens[d]
+
+    def load_docs_from_resumes(self, infile_name, min_len=1):
+
+        resumes = load_json_resumes_lda(infile_name)
+
+        # global document_topic_distribs, document_prevs, document_nexts, document_lens, document_states
+        # global num_documents, num_sequences
+        # global document_topic_distribs_base
+
+        debug_len_distrib = np.zeros(20, np.int_)
+        # docs = []
+        # doc_idx = 0
+        # for r, resume in enumerate(resume_list):
+        #     resume_len = len(resume)
+        #     debug_len_distrib[min(19, resume_len)] += 1
+        #     if r % 10000 == 0:
+        #         logging.debug("\t{} {}".format(r, debug_len_distrib))
+        #
+        #     if resume_len < min_len:
+        #         continue
+        #
+        #     idxs = range(doc_idx, doc_idx + resume_len)
+        #     prevs = [None] + idxs[:-1]
+        #     nexts = idxs[1:] + [None]
+        #     for i, (res_ent, top_dis) in enumerate(resume):
+        #         docs.append(Document(prevs[i], nexts[i], top_dis))
+        #
+        #     doc_idx += resume_len
+
+        # we already called this, so technically we should pass it in
+        num_seqs, num_docs, num_topics = scan_json_resumes_lda(args.infile)
+
+        self.doc_prevs = np.ndarray(num_docs, np.int)
+        self.doc_nexts = np.ndarray(num_docs, np.int)
+        self.doc_topic_distribs = np.ndarray((num_docs, num_topics))
+        self.doc_lens = np.ndarray(num_docs, np.int)
+
+        doc_idx = 0
+        res_count = 0
+        for r, resume in enumerate(resumes):
+            resume_len = len(resume)
+            debug_len_distrib[min(19, resume_len)] += 1
+            if r % 10000 == 0:
+                logging.debug("\t{} {}".format(r, debug_len_distrib))
+
+            if resume_len < min_len:
+                continue
+
+            idxs = range(doc_idx, doc_idx + resume_len)
+            prevs = [NULL_DOC] + idxs[:-1]  # if it's missing,
+            nexts = idxs[1:] + [NULL_DOC]
+
+            # this could be done faster with array copy stuff
+            for i, (res_ent, top_dis) in enumerate(resume):
+                self.doc_prevs[doc_idx + i] = prevs[i]
+                self.doc_nexts[doc_idx + i] = nexts[i]
+                self.doc_topic_distribs[doc_idx + i] = top_dis
+                self.doc_lens[doc_idx + i] = sum(top_dis)
+
+            doc_idx += resume_len
+            res_count += 1
+
+        # now globalize 'em
+        # logging.debug("globalizing document arrays")
+        # document_prevs_base = multiprocessing.Array(ctypes.c_int, doc_prevs)
+        # document_prevs = wrap_global_array(document_prevs_base, doc_idx)
+        #
+        # document_nexts_base = multiprocessing.Array(ctypes.c_int, doc_nexts)
+        # document_nexts = wrap_global_array(document_nexts_base, doc_idx)
+
+        # See: https://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-multiprocessing
+        # document_topic_distribs_base = multiprocessing.Array(ctypes.c_double,
+        #                                                      np.ravel(doc_topic_distribs))
+        # document_topic_distribs = wrap_global_array(document_topic_distribs_base, (doc_idx, -1))
+
+        # document_topic_distribs = np.array(doc_topic_distribs, np.double)
+        #
+        # # document_prevs = multiprocessing.Array('i', doc_prevs)
+        # # document_nexts = multiprocessing.Array('i', doc_nexts)
+        # # document_lens = multiprocessing.Array(ctypes.c_double, doc_lens)
+        # # document_states = multiprocessing.Array('i', [-1]*doc_idx)
+        # document_prevs = np.array(doc_prevs, np.int)
+        # document_nexts = np.array(doc_nexts, np.int)
+        # document_lens = np.array(doc_lens, np.int)
+        # document_states = np.array([-1] * doc_idx, np.int)
+        #
+        self.num_docs = doc_idx
+        self.num_sequences = res_count
+        self.doc_states = np.ndarray(num_docs, np.int)
+
+    def save_progress(self, i, save_dir):
+        ts = str(datetime.datetime.now())
+
+        # model parameters (should not change between iters)
+        params = {
+            "num_states": self.num_states,
+            "pi": pi,
+            "gamma": gamma,
+            "alphas": [a for a in alphas],
+            "num_sequences": self.num_sequences,
+        }
+        json_str = json.dumps(params)
+        append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
+
+        # data structures capturing results of latest sampling iteration
+        # zzz todo fix!
+        # json_str = json.dumps([c for c in start_counts])
+        # append_to_file(os.path.join(save_dir, OUT_START_COUNTS), [ts, i, json_str])
+
+        json_str = json.dumps(self.state_trans.tolist())
+        append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
+
+        json_str = json.dumps([s.tolist() for s in self.state_topic_counts])
+        append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
+
+        json_str = json.dumps([s for s in self.doc_states])
+        append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
+
+    def load_progress(self, save_dir):
+        ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
+        params = json.loads(json_str)
+        self.num_states = params["num_states"]
+        pi = params["pi"]
+        gamma = params["gamma"]
+        alphas = params["alphas"]
+        self.num_sequences = params["num_sequences"]
+
+        ts, iter_starts, json_str = read_last_line(os.path.join(save_dir, OUT_START_COUNTS))
+        self.start_counts = np.array(json.loads(json_str), np.int_)
+
+        ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
+        # zzz todo: this is broken
+        self.state_trans = np.array(json.loads(json_str), np.int_)
+
+        ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
+        # zzz todo: this is broken
+        self.state_topic_counts = [np.array(lst) for lst in json.loads(json_str)]
+
+        ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
+        doc_states = json.loads(json_str)
+        # for doc, state in zip(documents, doc_states):
+        #     doc.state = state
+        for i, s in enumerate(doc_states):
+            self.doc_states[i] = s
+
+        if iter_params == iter_starts == iter_trans == iter_topics == iter_states:
+            return iter_params
+        else:
+            sys.exit("unequal iter counts loaded")
+
+    def delete_progress(self, save_dir):
+        del_count = 0
+        for fname in [OUT_PARAMS, OUT_START_COUNTS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
+            try:
+                path = os.path.join(save_dir, fname)
+                os.remove(path)
+                sys.stderr.write("removed " + path + "\n")
+                del_count += 1
+            except OSError:
+                continue
+        return del_count
 
 
-            document_states[d] = sample_from_loglikes(state_log_likes)
-            add_to_trans_counts(d, start_counts, state_trans, state_trans_tots)
-            add_to_topic_counts(d, state_topic_counts, state_topic_totals)
 
-        if i % lag_iters == 0:
-            save_progress(i, save_dir, state_topic_counts, start_counts, state_trans)
 
-    pool.terminate()
 
 
 # def calc_state_log_like(params):
@@ -291,14 +401,27 @@ def sample_doc_states(save_dir, iterations, lag_iters,
 #     return rets
 #
 
+def init_state_log_like(params):
+    topic_counts, topic_total, topic_distrib, doc_len, start_count, num_sequences, state_trans_prev = params
+
+    if state_trans_prev is None:
+        lik = (start_count + pi) / (num_sequences - 1 + sum_pi)
+    else:
+        lik = state_trans_prev + gamma
+    loglik = math.log(lik)
+
+    loglik += calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
+    return loglik
+
+
 def calc_state_log_like(params):
     topic_counts, topic_total, topic_distrib, doc_len, \
-    start_count, s, state_prev, state_next, \
+    start_count, num_seqs, s, state_prev, state_next, \
     state_trans_prev, state_trans_next, state_trans_tot = params
 
     ret = 0.0
     ret += calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
-    ret += calc_state_state_log_like(start_count, s, state_prev, state_next,
+    ret += calc_state_state_log_like(start_count, num_seqs, s, state_prev, state_next,
                               state_trans_prev, state_trans_next, state_trans_tot)
     return ret
 
@@ -315,14 +438,8 @@ def calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
     return ret
 
 
-def calc_state_state_log_like(start_count, s, state_prev, state_next,
+def calc_state_state_log_like(start_count, num_sequences, s, state_prev, state_next,
                               state_trans_prev, state_trans_next, state_trans_tot):
-    # print "d: ", d
-
-    # doc_prev = document_prevs[d]
-    # doc_next = document_nexts[d]
-    # doc_prev_state = document_states[doc_prev] if doc_prev != NULL_DOC else None
-    # doc_next_state = document_states[doc_next] if doc_next != NULL_DOC else None
 
     if state_trans_prev is None:  # beginning of resume sequence
         lik = (start_count + pi) / (num_sequences - 1 + sum_pi)
@@ -348,133 +465,6 @@ def calc_state_state_log_like(start_count, s, state_prev, state_next,
                        (state_trans_tot + sum_gamma))
     # print "lik for state ", s, "(", trace, ")", ": ", lik
     return math.log(lik)
-
-
-def add_to_trans_counts(d, start_counts, state_trans, state_trans_tots):
-    doc_state = document_states[d]
-    doc_prev = document_prevs[d]
-    doc_next = document_nexts[d]
-
-    if doc_prev == NULL_DOC:  # beginning of resume sequence
-        start_counts[doc_state] += 1
-        if doc_next != NULL_DOC:  # not a singleton sequence
-            state_trans[doc_state, document_states[doc_next]] += 1
-            state_trans_tots[doc_state] += 1
-    else:  # middle of sequence
-        state_trans[document_states[doc_prev], doc_state] += 1
-        if doc_next != NULL_DOC:  # not the end of sequence
-            state_trans[doc_state, document_states[doc_next]] += 1
-            state_trans_tots[doc_state] += 1
-
-
-def remove_from_trans_counts(d, start_counts, state_trans, state_trans_tots):
-    doc_state = document_states[d]
-    doc_prev = document_prevs[d]
-    doc_next = document_nexts[d]
-
-    if doc_prev == NULL_DOC:  # beginning of resume sequence
-        start_counts[doc_state] -= 1
-        if doc_next != NULL_DOC:  # not a singleton sequence
-            state_trans[doc_state, document_states[doc_next]] -= 1
-            state_trans_tots[doc_state] -= 1
-    else:  # middle of sequence
-        state_trans[document_states[doc_prev], doc_state] -= 1
-        if doc_next != NULL_DOC:  # not end of sequence
-            state_trans[doc_state, document_states[doc_next]] -= 1
-            state_trans_tots[doc_state] -= 1
-
-
-def add_to_topic_counts(d, state_topic_counts, state_topic_totals):
-    # global state_topic_counts, state_topic_totals
-    doc_state = document_states[d]
-    state_topic_counts[doc_state] += document_topic_distribs[d]
-    state_topic_totals[doc_state] += document_lens[d]
-
-
-def remove_from_topic_counts(d, state_topic_counts, state_topic_totals):
-    # global state_topic_counts, state_topic_totals
-    doc_state = document_states[d]
-    state_topic_counts[doc_state] -= document_topic_distribs[d]
-    state_topic_totals[doc_state] -= document_lens[d]
-
-
-def save_progress(i, save_dir, state_topic_counts, start_counts, state_trans):
-    ts = str(datetime.datetime.now())
-
-    # model parameters (should not change between iters)
-    params = {
-        "num_states": num_states,
-        "pi": pi,
-        "gamma": gamma,
-        "alphas": [a for a in alphas],
-        "num_sequences": num_sequences,
-    }
-    json_str = json.dumps(params)
-    append_to_file(os.path.join(save_dir, OUT_PARAMS), [ts, i, json_str])
-
-    # data structures capturing results of latest sampling iteration
-    #zzz todo fix!
-    # json_str = json.dumps([c for c in start_counts])
-    # append_to_file(os.path.join(save_dir, OUT_START_COUNTS), [ts, i, json_str])
-
-    json_str = json.dumps(state_trans.tolist())
-    append_to_file(os.path.join(save_dir, OUT_STATE_TRANS), [ts, i, json_str])
-
-    json_str = json.dumps([ s.tolist() for s in state_topic_counts ])
-    append_to_file(os.path.join(save_dir, OUT_STATE_TOPICS), [ts, i, json_str])
-
-    json_str = json.dumps([s for s in document_states])
-    append_to_file(os.path.join(save_dir, OUT_STATES), [ts, i, json_str])
-
-
-def load_progress(save_dir, state_topic_counts, start_counts, state_trans):
-    # global num_states, pi, gamma, alphas, num_sequences, start_counts, state_trans, state_topic_counts, document_states
-    global num_states, pi, gamma, alphas, num_sequences, document_states
-
-    ts, iter_params, json_str = read_last_line(os.path.join(save_dir, OUT_PARAMS))
-    params = json.loads(json_str)
-    num_states = params["num_states"]
-    pi = params["pi"]
-    gamma = params["gamma"]
-    alphas = params["alphas"]
-    num_sequences = params["num_sequences"]
-
-    ts, iter_starts, json_str = read_last_line(os.path.join(save_dir, OUT_START_COUNTS))
-    start_counts = np.array(json.loads(json_str), np.int_)
-
-    ts, iter_trans, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TRANS))
-    # zzz todo: this is broken
-    state_trans = np.array(json.loads(json_str), np.int_)
-
-    ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
-    #zzz todo: this is broken
-    state_topic_counts = [ np.array(lst) for lst in json.loads(json_str) ]
-
-    ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
-    doc_states = json.loads(json_str)
-    # for doc, state in zip(documents, doc_states):
-    #     doc.state = state
-    for i, s in enumerate(doc_states):
-        document_states[i] = s
-
-
-    if iter_params == iter_starts == iter_trans == iter_topics == iter_states:
-        return iter_params
-    else:
-        sys.exit("unequal iter counts loaded")
-
-
-def delete_progress(save_dir):
-    del_count = 0
-    for fname in [OUT_PARAMS, OUT_START_COUNTS, OUT_STATE_TRANS, OUT_STATE_TOPICS, OUT_STATES]:
-        try:
-            path = os.path.join(save_dir, fname)
-            os.remove(path)
-            sys.stderr.write("removed " + path + "\n")
-            del_count += 1
-        except OSError:
-            continue
-    return del_count
 
 
 def sample_from_loglikes(state_log_likes):
@@ -506,89 +496,6 @@ def wrap_global_array(shared_array_base, shape):
     return shared_array.reshape(shape)
 
 
-def get_docs_from_resumes(resume_list, min_len=1):
-    global document_topic_distribs, document_prevs, document_nexts, document_lens, document_states
-    global num_documents, num_sequences
-
-    global document_topic_distribs_base
-
-    debug_len_distrib = np.zeros(20, np.int_)
-    # docs = []
-    # doc_idx = 0
-    # for r, resume in enumerate(resume_list):
-    #     resume_len = len(resume)
-    #     debug_len_distrib[min(19, resume_len)] += 1
-    #     if r % 10000 == 0:
-    #         logging.debug("\t{} {}".format(r, debug_len_distrib))
-    #
-    #     if resume_len < min_len:
-    #         continue
-    #
-    #     idxs = range(doc_idx, doc_idx + resume_len)
-    #     prevs = [None] + idxs[:-1]
-    #     nexts = idxs[1:] + [None]
-    #     for i, (res_ent, top_dis) in enumerate(resume):
-    #         docs.append(Document(prevs[i], nexts[i], top_dis))
-    #
-    #     doc_idx += resume_len
-
-
-    doc_prevs = []
-    doc_nexts = []
-    doc_topic_distribs = []
-    doc_lens = []
-    doc_idx = 0
-    res_count = 0
-    for r, resume in enumerate(resume_list):
-        resume_len = len(resume)
-        debug_len_distrib[min(19, resume_len)] += 1
-        if r % 10000 == 0:
-            logging.debug("\t{} {}".format(r, debug_len_distrib))
-
-        if resume_len < min_len:
-            continue
-
-        idxs = range(doc_idx, doc_idx + resume_len)
-        prevs = [NULL_DOC] + idxs[:-1]  # if it's missing,
-        nexts = idxs[1:] + [NULL_DOC]
-
-        for i, (res_ent, top_dis) in enumerate(resume):
-            doc_prevs.append(prevs[i])
-            doc_nexts.append(nexts[i])
-            doc_topic_distribs.append(top_dis)
-            doc_lens.append(sum(top_dis))
-
-        doc_idx += resume_len
-        res_count += 1
-
-    # now globalize 'em
-    logging.debug("globalizing document arrays")
-    # document_prevs_base = multiprocessing.Array(ctypes.c_int, doc_prevs)
-    # document_prevs = wrap_global_array(document_prevs_base, doc_idx)
-    #
-    # document_nexts_base = multiprocessing.Array(ctypes.c_int, doc_nexts)
-    # document_nexts = wrap_global_array(document_nexts_base, doc_idx)
-
-    # See: https://stackoverflow.com/questions/5549190/is-shared-readonly-data-copied-to-different-processes-for-multiprocessing
-    # document_topic_distribs_base = multiprocessing.Array(ctypes.c_double,
-    #                                                      np.ravel(doc_topic_distribs))
-    # document_topic_distribs = wrap_global_array(document_topic_distribs_base, (doc_idx, -1))
-
-    document_topic_distribs = np.array(doc_topic_distribs, np.double)
-
-    # document_prevs = multiprocessing.Array('i', doc_prevs)
-    # document_nexts = multiprocessing.Array('i', doc_nexts)
-    # document_lens = multiprocessing.Array(ctypes.c_double, doc_lens)
-    # document_states = multiprocessing.Array('i', [-1]*doc_idx)
-    document_prevs = np.array(doc_prevs, np.int)
-    document_nexts = np.array(doc_nexts, np.int)
-    document_lens = np.array(doc_lens, np.int)
-    document_states = np.array([-1]*doc_idx, np.int)
-
-    num_documents = doc_idx
-    num_sequences = res_count
-
-
 
 def append_to_file(file_name, elts):
     with open(file_name, 'a') as out:
@@ -603,14 +510,14 @@ def read_last_line(file_name):
         return line.rstrip("\n").split("\t")
 
 
-def debug_audit_state_trans_tots(docs):
-    # num_states = max([ doc.state for doc in docs ]) + 1
-    num_states = max(document_states) + 1
-    state_trans_tots = [0] * num_states
-    for d, doc in enumerate(docs):
-        if doc.doc_next != NULL_DOC:
-            state_trans_tots[document_states[d]] += 1
-    return state_trans_tots
+# def debug_audit_state_trans_tots(docs):
+#     # num_states = max([ doc.state for doc in docs ]) + 1
+#     num_states = max(document_states) + 1
+#     state_trans_tots = [0] * num_states
+#     for d, doc in enumerate(docs):
+#         if doc.doc_next != NULL_DOC:
+#             state_trans_tots[document_states[d]] += 1
+#     return state_trans_tots
 
 
 ##########################################
@@ -630,17 +537,31 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    logging.info("scanning resume file")
+    num_seqs, num_docs, num_tops = scan_json_resumes_lda(args.infile)
+
+    hmm = ResumeHmm(args.num_states, args.pi, args.gamma, num_tops)
+
+
+    # create a multiprocessing pool that can be reused each iteration
+    logging.info("allocating {} subprocesses".format(args.num_procs))
+    pool = multiprocessing.Pool(processes=args.num_procs)
+
     # get a list of lists of (ResumeEntry, topic_distrib) tuples
     logging.info("loading resumes from file")
-    resumes = load_json_resumes_lda(args.infile)
-    num_tops = len(resumes[0][0][1])  # distrib for the first job entry in the first resume
-    logging.info("extracting documents from resumes")
-    get_docs_from_resumes(resumes)
-    del resumes
+    hmm.load_docs_from_resumes(args.infile)
+
+
+    # resumes = load_json_resumes_lda()
+    #
+    # logging.info("extracting documents from resumes")
+    # get_docs_from_resumes(resumes)
+    # del resumes
 
     logging.info("fitting HMM")
-    init(args.num_states, args.pi, args.gamma, num_tops)
-    fit(args.savedir, args.num_iters, args.lag, erase=args.erase,
-        num_procs=args.num_procs)
+    hmm.fit(args.savedir, args.num_iters, args.lag, pool, erase=args.erase)
+
+    logging.info("killing subprocesses")
+    pool.terminate()
 
     print "yo zzz"
