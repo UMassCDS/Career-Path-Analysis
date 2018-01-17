@@ -89,14 +89,33 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
 # Even though we only use dump() here, define them together so they stay in sync
 def dump_json_resumes_lda(resumes, outfile_name):
     with open(outfile_name, 'w') as outfile:
-        out = [ [ [resume_common.tuplify(e), lda.tolist()] for e, lda in resume ] for resume in resumes ]
-        json.dump(out, outfile)
+        # out = [ [ [resume_common.tuplify(e), lda.tolist()] for e, lda in resume ] for resume in resumes ]
+        # json.dump(out, outfile)
+        for resume in resumes:
+            json_line = json.dumps([ [resume_common.tuplify(e), lda.tolist()] for e, lda in resume ])
+            outfile.write(json_line + "\n")
 
 
 def load_json_resumes_lda(infile_name):
+    resume_tups = []
     with open(infile_name, 'r') as infile:
-        resume_tups = json.load(infile)
+        # resume_tups = json.load(infile)
+        for json_line in infile:
+            resume_tups.append(json.loads(json_line.rstrip("\n")))
     return [ [ (resume_common.detuplify(e), lda) for e, lda in entry ] for entry in resume_tups ]
+
+
+def scan_json_resumes_lda(infile_name):
+    resume_count = 0
+    entry_count = 0
+    topic_count = None
+    with open(infile_name, 'r') as infile:
+        for json_line in infile:
+            resume = json.loads(json_line.rstrip("\n"))
+            entry_count += len(resume)
+            resume_count += 1
+            topic_count = len(resume[0][1])
+    return resume_count, entry_count, topic_count
 
 
 ###################################
