@@ -92,7 +92,7 @@ class ResumeHmm(object):
         # pool = multiprocessing.Pool(processes=num_procs)
 
         for d in range(self.num_docs):
-            if d % 1000 == 0:
+            if d % 50000 == 0:
                 logging.debug("initializing doc {}/{}".format(d, self.num_docs - 1))
 
             args = [(self.state_topic_counts[s],
@@ -143,7 +143,7 @@ class ResumeHmm(object):
 
             # for d, doc in enumerate(docs):
             for d in range(self.num_docs):
-                if d % 100000 == 0:
+                if d % 50000 == 0:
                     logging.debug("iter {}/{}, doc {}/{}".format(i, iterations-1, d, self.num_docs-1))
 
                 self.remove_from_trans_counts(d)
@@ -539,14 +539,14 @@ if __name__ == '__main__':
     parser.add_argument('--lag', type=int, default=10)
     parser.add_argument('--erase', action='store_true')
     parser.add_argument('--num_procs', type=int, default=1)
+    parser.add_argument('--min_len', type=int, default=1)
 
     args = parser.parse_args()
 
     logging.info("scanning resume file")
-    num_seqs, num_docs, num_tops = scan_json_resumes_lda(args.infile)
+    num_seqs, num_docs, num_tops = scan_json_resumes_lda(args.infile, args.min_len)
 
     hmm = ResumeHmm(args.num_states, args.pi, args.gamma, num_tops)
-
 
     # create a multiprocessing pool that can be reused each iteration
     logging.info("allocating {} subprocesses".format(args.num_procs))
@@ -554,8 +554,7 @@ if __name__ == '__main__':
 
     # get a list of lists of (ResumeEntry, topic_distrib) tuples
     logging.info("loading resumes from file")
-    hmm.load_docs_from_resumes(args.infile)
-
+    hmm.load_docs_from_resumes(args.infile, min_len=args.min_len)
 
     # resumes = load_json_resumes_lda()
     #

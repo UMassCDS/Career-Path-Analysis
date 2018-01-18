@@ -105,14 +105,17 @@ def load_json_resumes_lda(infile_name):
     return [ [ (resume_common.detuplify(e), lda) for e, lda in entry ] for entry in resume_tups ]
 
 
-def scan_json_resumes_lda(infile_name):
+def scan_json_resumes_lda(infile_name, min_len=1):
     resume_count = 0
     entry_count = 0
     topic_count = None
     with open(infile_name, 'r') as infile:
         for json_line in infile:
             resume = json.loads(json_line.rstrip("\n"))
-            entry_count += len(resume)
+            resume_len = len(resume)
+            if resume_len < min_len:
+                continue
+            entry_count += resume_len
             resume_count += 1
             topic_count = len(resume[0][1])
     return resume_count, entry_count, topic_count
