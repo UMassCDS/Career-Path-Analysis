@@ -128,7 +128,7 @@ class ResumeHmm(object):
 
     # def sample_doc_states(self, save_dir, iterations, lag_iters, start_iter=0, num_procs=1):
     def sample_doc_states(self, save_dir, iterations, lag_iters, pool, start_iter=0):
-        timing_iters = 10  # calc a moving average of time per iter over this many
+        timing_iters = 1  # calc a moving average of time per iter over this many
         timing_start = datetime.datetime.now()
 
         # # create a multiprocessing pool that can be reused each iteration
