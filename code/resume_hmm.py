@@ -177,6 +177,33 @@ class ResumeHmm(object):
                 else:
                     state_log_likes = pool.map(calc_state_log_like, args)
 
+
+
+
+                state_log_likes2a = calc_state_topic_log_like_matrix(alphas, sum_alpha,
+                                                                    self.state_topic_counts,
+                                                                    self.state_topic_totals,
+                                                                    self.doc_topic_distribs[d],
+                                                                    self.doc_lens[d])
+                doc_prev = self.doc_prevs[d]
+                doc_prev_state = self.doc_states[doc_prev] if doc_prev != NULL_DOC else None
+                doc_next = self.doc_nexts[d]
+                doc_next_state = self.doc_states[doc_next] if doc_next != NULL_DOC else None
+                state_log_likes2b = calc_state_state_log_like_matrix(self.doc_states[d],
+                                                                     doc_prev_state,
+                                                                     doc_next_state,
+                                                                     self.state_trans,
+                                                                     self.state_trans_tots,
+                                                                     pi, sum_pi, gamma, sum_gamma,
+                                                                     self.start_counts,
+                                                                     self.num_sequences)
+                state_log_likes2 = state_log_likes2a + state_log_likes2b
+
+                # print "doc {}, iter {}:".format(d, i)
+                # print state_log_likes[:5]
+                # print state_log_likes2[:5]
+                # print "\n\n"
+
                 self.doc_states[d] = sample_from_loglikes(state_log_likes)
                 self.add_to_trans_counts(d)
                 self.add_to_topic_counts(d)
@@ -367,7 +394,7 @@ class ResumeHmm(object):
 
         ts, iter_topics, json_str = read_last_line(os.path.join(save_dir, OUT_STATE_TOPICS))
         # zzz todo: this is broken
-        self.state_topic_counts = [np.array(lst) for lst in json.loads(json_str)]
+        self.state_topic_counts = np.array(json.loads(json_str), np.double)
 
         ts, iter_states, json_str = read_last_line(os.path.join(save_dir, OUT_STATES))
         doc_states = json.loads(json_str)
@@ -456,7 +483,7 @@ def calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
 def calc_state_topic_log_like_matrix(alphas, sum_alpha,
                                      state_topic_counts, state_topic_totals,
                                      doc_topic_distrib, doc_len):
-    num_states, num_topics = state_topic_counts.shape()
+    # num_states, num_topics = state_topic_counts.shape
     # den = np.zeros((num_states, num_topics))
 
     # state_topic_counts is (s x t), so each state is a row, each topic a col
@@ -502,9 +529,37 @@ def calc_state_state_log_like(start_count, num_sequences, s, state_prev, state_n
     return math.log(lik)
 
 
-def calc_state_state_log_like_matrix():
-    pass
+def calc_state_state_log_like_matrix(doc_state, doc_prev_state, doc_next_state,
+                                     state_trans, state_trans_tots,
+                                     pi, sum_pi, gamma, sum_gamma,
+                                     state_start_counts, num_seqs):
 
+    if doc_prev_state is None:  # beginning of resume sequence
+        state_liks = state_start_counts + pi  # s x 1
+        state_liks /= (num_seqs - 1 + sum_pi)
+
+        if doc_next_state is not None:  # not a singleton sequence
+            state_liks *= state_trans[:, doc_next_state] + gamma
+
+    else:  # middle of sequence
+        if doc_next_state is None:  # end of sequence
+            state_liks = state_trans[doc_prev_state, :] + gamma
+        else:
+            if doc_prev_state == doc_state:
+                if doc_state == doc_next_state:
+                    state_liks = state_trans[doc_prev_state, :] + gamma
+                    state_liks *= state_trans[:, doc_next_state] + 1 + gamma
+                    state_liks /= state_trans_tots + 1 + sum_gamma
+                else:
+                    state_liks = state_trans[doc_prev_state, :] + gamma
+                    state_liks *= state_trans[:, doc_next_state] + gamma
+                    state_liks /= state_trans_tots + 1 + sum_gamma
+            else:  # (doc_prev.state != s)
+                state_liks = state_trans[doc_prev_state, :] + gamma
+                state_liks *= state_trans[:, doc_next_state] + gamma
+                state_liks /= state_trans_tots + sum_gamma
+
+    return np.log(state_liks)
 
 
 def sample_from_loglikes(state_log_likes):
