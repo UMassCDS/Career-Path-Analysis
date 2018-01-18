@@ -158,26 +158,26 @@ class ResumeHmm(object):
                 #     args = [ (d, s) for s in range(num_states) ]
                 #     state_log_likes = pool.map(calc_state_log_like, args)
 
-                args = [ (self.state_topic_counts[s],
-                          self.state_topic_totals[s],
-
-                          self.doc_topic_distribs[d],
-                          self.doc_lens[d],
-
-                          self.start_counts[s], self.num_sequences, s, self.doc_prevs[d], self.doc_nexts[d],
-
-                          self.state_trans[self.doc_states[self.doc_prevs[d]], s] if
-                                                            self.doc_prevs[d] != NULL_DOC else None,
-                          self.state_trans[self.doc_states[self.doc_nexts[d]], s] if
-                                                            self.doc_nexts[d] != NULL_DOC else None,
-                          self.state_trans_tots[s]) for s in range(self.num_states) ]
-
-                if pool is None:
-                    state_log_likes = [ calc_state_log_like(a) for a in args ]
-                else:
-                    state_log_likes = pool.map(calc_state_log_like, args)
-
-
+                # args = [ (self.state_topic_counts[s],
+                #           self.state_topic_totals[s],
+                #
+                #           self.doc_topic_distribs[d],
+                #           self.doc_lens[d],
+                #
+                #           self.start_counts[s], self.num_sequences, s, self.doc_prevs[d], self.doc_nexts[d],
+                #
+                #           self.state_trans[self.doc_states[self.doc_prevs[d]], s] if
+                #                                             self.doc_prevs[d] != NULL_DOC else None,
+                #           self.state_trans[self.doc_states[self.doc_nexts[d]], s] if
+                #                                             self.doc_nexts[d] != NULL_DOC else None,
+                #           self.state_trans_tots[s]) for s in range(self.num_states) ]
+                #
+                # if pool is None:
+                #     state_log_likes = [ calc_state_log_like(a) for a in args ]
+                # else:
+                #     state_log_likes = pool.map(calc_state_log_like, args)
+                #
+                #
 
 
                 state_log_likes2a = calc_state_topic_log_like_matrix(alphas, sum_alpha,
@@ -197,7 +197,7 @@ class ResumeHmm(object):
                                                                      pi, sum_pi, gamma, sum_gamma,
                                                                      self.start_counts,
                                                                      self.num_sequences)
-                state_log_likes2 = state_log_likes2a + state_log_likes2b
+                state_log_likes = state_log_likes2a + state_log_likes2b
 
                 # print "doc {}, iter {}:".format(d, i)
                 # print state_log_likes[:5]
