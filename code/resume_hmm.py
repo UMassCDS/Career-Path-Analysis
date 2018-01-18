@@ -223,7 +223,7 @@ class ResumeHmm(object):
 
     def load_docs_from_resumes(self, infile_name, min_len=1, max_docs=sys.maxint):
 
-        resumes = load_json_resumes_lda(infile_name)
+        resumes = load_json_resumes_lda(infile_name, max_docs)
 
         # global document_topic_distribs, document_prevs, document_nexts, document_lens, document_states
         # global num_documents, num_sequences
