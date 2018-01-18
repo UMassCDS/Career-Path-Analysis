@@ -164,7 +164,7 @@ class ResumeHmm(object):
                           self.doc_topic_distribs[d],
                           self.doc_lens[d],
 
-                          self.start_counts[s], self.num_sequences, s, self.doc_prevs[s], self.doc_nexts[s],
+                          self.start_counts[s], self.num_sequences, s, self.doc_prevs[d], self.doc_nexts[d],
 
                           self.state_trans[self.doc_states[self.doc_prevs[d]], s] if
                                                             self.doc_prevs[d] != NULL_DOC else None,
@@ -453,6 +453,25 @@ def calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
            math.lgamma(sum_alpha + topic_total + doc_len)
     return ret
 
+def calc_state_topic_log_like_matrix(alphas, sum_alpha,
+                                     state_topic_counts, state_topic_totals,
+                                     doc_topic_distrib, doc_len):
+    num_states, num_topics = state_topic_counts.shape()
+    # den = np.zeros((num_states, num_topics))
+
+    # state_topic_counts is (s x t), so each state is a row, each topic a col
+
+    den = state_topic_counts + alphas  # s x t
+    num = den + doc_topic_distrib      # s x t
+    state_sums1 = np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den), axis=1)  # s x 1
+
+
+    num = state_topic_totals + sum_alpha  # s x 1
+    den = num + doc_len                   # s x 1
+    state_sums2 = scipy.special.gammaln(num) - scipy.special.gammaln(den)  # s x 1
+
+    return state_sums1 + state_sums2
+
 
 def calc_state_state_log_like(start_count, num_sequences, s, state_prev, state_next,
                               state_trans_prev, state_trans_next, state_trans_tot):
@@ -481,6 +500,11 @@ def calc_state_state_log_like(start_count, num_sequences, s, state_prev, state_n
                        (state_trans_tot + sum_gamma))
     # print "lik for state ", s, "(", trace, ")", ": ", lik
     return math.log(lik)
+
+
+def calc_state_state_log_like_matrix():
+    pass
+
 
 
 def sample_from_loglikes(state_log_likes):
