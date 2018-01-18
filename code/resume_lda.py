@@ -105,7 +105,7 @@ def load_json_resumes_lda(infile_name):
     return [ [ (resume_common.detuplify(e), lda) for e, lda in entry ] for entry in resume_tups ]
 
 
-def scan_json_resumes_lda(infile_name, min_len=1):
+def scan_json_resumes_lda(infile_name, min_len=1, max_entries=sys.maxint):
     resume_count = 0
     entry_count = 0
     topic_count = None
@@ -118,6 +118,9 @@ def scan_json_resumes_lda(infile_name, min_len=1):
             entry_count += resume_len
             resume_count += 1
             topic_count = len(resume[0][1])
+            if entry_count > max_entries:
+                entry_count = max_entries
+                break
     return resume_count, entry_count, topic_count
 
 

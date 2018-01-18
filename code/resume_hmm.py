@@ -221,7 +221,7 @@ class ResumeHmm(object):
         self.state_topic_counts[doc_state] -= self.doc_topic_distribs[d]
         self.state_topic_totals[doc_state] -= self.doc_lens[d]
 
-    def load_docs_from_resumes(self, infile_name, min_len=1):
+    def load_docs_from_resumes(self, infile_name, min_len=1, max_docs=sys.maxint):
 
         resumes = load_json_resumes_lda(infile_name)
 
@@ -282,6 +282,11 @@ class ResumeHmm(object):
             doc_idx += resume_len
             res_count += 1
 
+            if doc_idx >= max_docs:
+                doc_idx = max_docs
+                break
+
+
         # now globalize 'em
         # logging.debug("globalizing document arrays")
         # document_prevs_base = multiprocessing.Array(ctypes.c_int, doc_prevs)
@@ -308,7 +313,7 @@ class ResumeHmm(object):
         #
         self.num_docs = doc_idx
         self.num_sequences = res_count
-        self.doc_states = np.ndarray(num_docs, np.int)
+        self.doc_states = np.ndarray(self.num_docs, np.int)
 
     def save_progress(self, i, save_dir):
         ts = str(datetime.datetime.now())
@@ -540,11 +545,12 @@ if __name__ == '__main__':
     parser.add_argument('--erase', action='store_true')
     parser.add_argument('--num_procs', type=int, default=1)
     parser.add_argument('--min_len', type=int, default=1)
+    parser.add_argument('--num_docs', type=int, default=sys.maxint)
 
     args = parser.parse_args()
 
     logging.info("scanning resume file")
-    num_seqs, num_docs, num_tops = scan_json_resumes_lda(args.infile, args.min_len)
+    num_seqs, num_docs, num_tops = scan_json_resumes_lda(args.infile, args.min_len, args.num_docs)
 
     hmm = ResumeHmm(args.num_states, args.pi, args.gamma, num_tops)
 
@@ -554,7 +560,7 @@ if __name__ == '__main__':
 
     # get a list of lists of (ResumeEntry, topic_distrib) tuples
     logging.info("loading resumes from file")
-    hmm.load_docs_from_resumes(args.infile, min_len=args.min_len)
+    hmm.load_docs_from_resumes(args.infile, min_len=args.min_len, max_docs=args.num_docs)
 
     # resumes = load_json_resumes_lda()
     #
