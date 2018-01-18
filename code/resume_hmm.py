@@ -105,7 +105,10 @@ class ResumeHmm(object):
                                                         self.doc_prevs[d] != NULL_DOC else None
                     ) for s in range(self.num_states)]
 
-            state_log_likes = pool.map(init_state_log_like, args)
+            if pool is None:
+                state_log_likes = [init_state_log_like(a) for a in args]
+            else:
+                state_log_likes = pool.map(init_state_log_like, args)
             new_state = sample_from_loglikes(state_log_likes)
             self.doc_states[d] = new_state
 
@@ -168,7 +171,11 @@ class ResumeHmm(object):
                           self.state_trans[self.doc_states[self.doc_nexts[d]], s] if
                                                             self.doc_nexts[d] != NULL_DOC else None,
                           self.state_trans_tots[s]) for s in range(self.num_states) ]
-                state_log_likes = pool.map(calc_state_log_like, args)
+
+                if pool is None:
+                    state_log_likes = [ calc_state_log_like(a) for a in args ]
+                else:
+                    state_log_likes = pool.map(calc_state_log_like, args)
 
                 self.doc_states[d] = sample_from_loglikes(state_log_likes)
                 self.add_to_trans_counts(d)
@@ -283,7 +290,6 @@ class ResumeHmm(object):
             res_count += 1
 
             if doc_idx >= max_docs:
-                doc_idx = max_docs
                 break
 
 
@@ -551,12 +557,16 @@ if __name__ == '__main__':
 
     logging.info("scanning resume file")
     num_seqs, num_docs, num_tops = scan_json_resumes_lda(args.infile, args.min_len, args.num_docs)
+    logging.info("{} resumes, {} jobs, {} topics".format(num_seqs, num_docs, num_tops))
 
     hmm = ResumeHmm(args.num_states, args.pi, args.gamma, num_tops)
 
     # create a multiprocessing pool that can be reused each iteration
-    logging.info("allocating {} subprocesses".format(args.num_procs))
-    pool = multiprocessing.Pool(processes=args.num_procs)
+    if args.num_procs > 1:
+        logging.info("allocating {} subprocesses".format(args.num_procs))
+        pool = multiprocessing.Pool(processes=args.num_procs)
+    else:
+        pool = None
 
     # get a list of lists of (ResumeEntry, topic_distrib) tuples
     logging.info("loading resumes from file")
@@ -571,7 +581,8 @@ if __name__ == '__main__':
     logging.info("fitting HMM")
     hmm.fit(args.savedir, args.num_iters, args.lag, pool, erase=args.erase)
 
-    logging.info("killing subprocesses")
-    pool.terminate()
+    if pool is not None:
+        logging.info("killing subprocesses")
+        pool.terminate()
 
     print "yo zzz"
