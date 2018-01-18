@@ -101,7 +101,8 @@ class ResumeHmm(object):
                      self.doc_lens[d],
                      self.start_counts[s],
                      self.num_sequences,
-                     self.state_trans[self.doc_prevs[s], s] if self.doc_prevs[s] != NULL_DOC else None
+                     self.state_trans[self.doc_states[self.doc_prevs[d]], s] if
+                                                        self.doc_prevs[d] != NULL_DOC else None
                     ) for s in range(self.num_states)]
 
             state_log_likes = pool.map(init_state_log_like, args)
@@ -142,7 +143,7 @@ class ResumeHmm(object):
 
             # for d, doc in enumerate(docs):
             for d in range(self.num_docs):
-                if d % 1000 == 0:
+                if d % 100000 == 0:
                     logging.debug("iter {}/{}, doc {}/{}".format(i, iterations-1, d, self.num_docs-1))
 
                 self.remove_from_trans_counts(d)
@@ -156,12 +157,16 @@ class ResumeHmm(object):
 
                 args = [ (self.state_topic_counts[s],
                           self.state_topic_totals[s],
-                          np.array(self.doc_topic_distribs[d]),
+
+                          self.doc_topic_distribs[d],
                           self.doc_lens[d],
 
                           self.start_counts[s], self.num_sequences, s, self.doc_prevs[s], self.doc_nexts[s],
-                          self.state_trans[self.doc_prevs[s], s] if self.doc_prevs[s] != NULL_DOC else None,
-                          self.state_trans[self.doc_nexts[s], s] if self.doc_nexts[s] != NULL_DOC else None,
+
+                          self.state_trans[self.doc_states[self.doc_prevs[d]], s] if
+                                                            self.doc_prevs[d] != NULL_DOC else None,
+                          self.state_trans[self.doc_states[self.doc_nexts[d]], s] if
+                                                            self.doc_nexts[d] != NULL_DOC else None,
                           self.state_trans_tots[s]) for s in range(self.num_states) ]
                 state_log_likes = pool.map(calc_state_log_like, args)
 
