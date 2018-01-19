@@ -179,12 +179,12 @@ class ResumeHmm(object):
                 #
                 #
 
-
                 state_log_likes2a = calc_state_topic_log_like_matrix(alphas, sum_alpha,
                                                                     self.state_topic_counts,
                                                                     self.state_topic_totals,
                                                                     self.doc_topic_distribs[d],
                                                                     self.doc_lens[d])
+
                 doc_prev = self.doc_prevs[d]
                 doc_prev_state = self.doc_states[doc_prev] if doc_prev != NULL_DOC else None
                 doc_next = self.doc_nexts[d]
@@ -211,7 +211,7 @@ class ResumeHmm(object):
             if i % lag_iters == 0:
                 self.save_progress(i, save_dir)
 
-        # pool.terminate()
+                # pool.terminate()
 
     def add_to_trans_counts(self, d):
         doc_state = self.doc_states[d]
@@ -483,21 +483,16 @@ def calc_state_topic_log_like(topic_counts, topic_total, topic_distrib, doc_len)
 def calc_state_topic_log_like_matrix(alphas, sum_alpha,
                                      state_topic_counts, state_topic_totals,
                                      doc_topic_distrib, doc_len):
-    # num_states, num_topics = state_topic_counts.shape
-    # den = np.zeros((num_states, num_topics))
-
     # state_topic_counts is (s x t), so each state is a row, each topic a col
-
     den = state_topic_counts + alphas  # s x t
     num = den + doc_topic_distrib      # s x t
-    state_sums1 = np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den), axis=1)  # s x 1
-
+    state_sums = np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den), axis=1)  # s x 1
 
     num = state_topic_totals + sum_alpha  # s x 1
     den = num + doc_len                   # s x 1
-    state_sums2 = scipy.special.gammaln(num) - scipy.special.gammaln(den)  # s x 1
+    state_sums += scipy.special.gammaln(num) - scipy.special.gammaln(den)  # s x 1
 
-    return state_sums1 + state_sums2
+    return state_sums
 
 
 def calc_state_state_log_like(start_count, num_sequences, s, state_prev, state_next,
