@@ -179,11 +179,12 @@ class ResumeHmm(object):
                 #
                 #
 
-                state_log_likes2a = calc_state_topic_log_like_matrix(alphas, sum_alpha,
-                                                                    self.state_topic_counts,
-                                                                    self.state_topic_totals,
-                                                                    self.doc_topic_distribs[d],
-                                                                    self.doc_lens[d])
+                # state_log_likes2a = calc_state_topic_log_like_matrix(alphas, sum_alpha,
+                #                                                     self.state_topic_counts,
+                #                                                     self.state_topic_totals,
+                #                                                     self.doc_topic_distribs[d],
+                #                                                     self.doc_lens[d])
+                state_log_likes2a = self.calc_state_topic_log_like_matrix(d)
 
                 doc_prev = self.doc_prevs[d]
                 doc_prev_state = self.doc_states[doc_prev] if doc_prev != NULL_DOC else None
@@ -212,6 +213,19 @@ class ResumeHmm(object):
                 self.save_progress(i, save_dir)
 
                 # pool.terminate()
+
+    def calc_state_topic_log_like_matrix(self, d):
+
+        # state_topic_counts is (s x t), so each state is a row, each topic a col
+        den = self.state_topic_counts + alphas  # SxT
+        num = den + self.doc_topic_distribs[d]  # SxT
+        state_sums = np.sum(scipy.special.gammaln(num) - scipy.special.gammaln(den), axis=1)  # Sx1
+
+        num = self.state_topic_totals + sum_alpha  # Sx1
+        den = num + self.doc_lens[d]  # Sx1
+        state_sums += scipy.special.gammaln(num) - scipy.special.gammaln(den)  # Sx1
+
+        return state_sums
 
     def add_to_trans_counts(self, d):
         doc_state = self.doc_states[d]
