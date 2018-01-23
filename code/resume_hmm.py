@@ -125,6 +125,9 @@ class ResumeHmm(object):
             if i % lag_iters == 0:
                 self.save_progress(i, save_dir)
 
+        self.save_progress(i, save_dir)
+
+    # @profile  # used for line-by-line kernprof profiling
     def calc_state_topic_log_like_matrix(self, d):
         # state_topic_counts is (s x t), so each state is a row, each topic a col
         den = self.state_topic_counts + self.alphas  # SxT
@@ -229,22 +232,28 @@ class ResumeHmm(object):
         self.state_topic_totals[doc_state] -= self.doc_lens[d]
 
     def load_docs_from_resumes(self, infile_name, min_len=1, max_docs=sys.maxint):
-        resumes = load_json_resumes_lda(infile_name, max_docs)
-        debug_len_distrib = np.zeros(20, np.int_)
+        # Each resume should come in as a list of pairs, where each pair represents a job
+        # with (start, end, company, descrip) and (0.04, 0.02, 0.1...) tuples
+        resumes = load_json_resumes_lda(infile_name, min_len=min_len, max_entries=max_docs)
 
-        # we already called this, so maybe we should pass it instead
-        num_seqs, num_docs, num_topics = scan_json_resumes_lda(args.infile)
+        num_docs = sum(map(len, resumes))
+        num_topics = len(resumes[0][0][1])  # first resume, first job, length of topic distrib
+        logging.info("loading {} resumes, {} jobs, {} topics".format(len(resumes),
+                                                                     num_docs,
+                                                                     num_topics))
 
         self.doc_prevs = np.ndarray(num_docs, np.int)
         self.doc_nexts = np.ndarray(num_docs, np.int)
         self.doc_topic_distribs = np.ndarray((num_docs, num_topics))
         self.doc_lens = np.ndarray(num_docs, np.int)
 
+        debug_len_distrib_len = 20
+        debug_len_distrib = np.zeros(debug_len_distrib_len, np.int)
         doc_idx = 0
         res_count = 0
         for r, resume in enumerate(resumes):
             resume_len = len(resume)
-            debug_len_distrib[min(19, resume_len)] += 1
+            debug_len_distrib[min(debug_len_distrib_len-1, resume_len)] += 1
             if r % 10000 == 0:
                 logging.debug("\t{} {}".format(r, debug_len_distrib))
 
@@ -268,6 +277,10 @@ class ResumeHmm(object):
             if doc_idx >= max_docs:
                 break
 
+        n = float(len(resumes))
+        for i in range(debug_len_distrib_len):
+            logging.debug("resumes of len {:2d}: {:6d} {:.2f}".format(i, debug_len_distrib[i],
+                                                                   debug_len_distrib[i]/n))
         self.num_docs = doc_idx
         self.num_sequences = res_count
         self.doc_states = np.ndarray(self.num_docs, np.int)
@@ -413,3 +426,20 @@ if __name__ == '__main__':
     hmm.fit(args.savedir, args.num_iters, args.lag, erase=args.erase)
 
     print "yo zzz"
+
+
+
+#######################
+# TODO:
+#
+# - seem to get different doc counts from scan and load... need to investigate
+#
+#
+#
+#
+#
+
+
+
+
+

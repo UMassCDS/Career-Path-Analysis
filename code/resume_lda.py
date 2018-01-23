@@ -96,16 +96,18 @@ def dump_json_resumes_lda(resumes, outfile_name):
             outfile.write(json_line + "\n")
 
 
-def load_json_resumes_lda(infile_name, max_resumes=sys.maxint):
+def load_json_resumes_lda(infile_name, min_len=1, max_entries=sys.maxint):
     resume_tups = []
-    resume_count = 0
+    entry_count = 0
     with open(infile_name, 'r') as infile:
         # resume_tups = json.load(infile)
         for json_line in infile:
             res = json.loads(json_line.rstrip("\n"))
+            if len(res) < min_len:
+                continue
             resume_tups.append(res)
-            resume_count += len(res)
-            if resume_count > max_resumes:
+            entry_count += len(res)
+            if entry_count > max_entries:
                 break
     return [ [ (resume_common.detuplify(e), lda) for e, lda in entry ] for entry in resume_tups ]
 
