@@ -95,20 +95,23 @@ class ResumeHmm(object):
             if d % 50000 == 0:
                 logging.debug("initializing doc {}/{}".format(d, self.num_docs - 1))
 
-            args = [(self.state_topic_counts[s],
-                     self.state_topic_totals[s],
-                     self.doc_topic_distribs[d],
-                     self.doc_lens[d],
-                     self.start_counts[s],
-                     self.num_sequences,
-                     self.state_trans[self.doc_states[self.doc_prevs[d]], s] if
-                                                        self.doc_prevs[d] != NULL_DOC else None
-                    ) for s in range(self.num_states)]
+            # args = [(self.state_topic_counts[s],
+            #          self.state_topic_totals[s],
+            #          self.doc_topic_distribs[d],
+            #          self.doc_lens[d],
+            #          self.start_counts[s],
+            #          self.num_sequences,
+            #          self.state_trans[self.doc_states[self.doc_prevs[d]], s] if
+            #                                             self.doc_prevs[d] != NULL_DOC else None
+            #         ) for s in range(self.num_states)]
+            #
+            # if pool is None:
+            #     state_log_likes = [init_state_log_like(a) for a in args]
+            # else:
+            #     state_log_likes = pool.map(init_state_log_like, args)
 
-            if pool is None:
-                state_log_likes = [init_state_log_like(a) for a in args]
-            else:
-                state_log_likes = pool.map(init_state_log_like, args)
+            state_log_likes = self.init_state_log_like_matrix(d)
+
             new_state = sample_from_loglikes(state_log_likes)
             self.doc_states[d] = new_state
 
@@ -230,7 +233,6 @@ class ResumeHmm(object):
         return state_sums
 
     def calc_state_state_log_like_matrix(self, d):
-
         doc_state = self.doc_states[d]
         doc_prev = self.doc_prevs[d]
         doc_prev_state = self.doc_states[doc_prev] if doc_prev != NULL_DOC else None
@@ -264,6 +266,20 @@ class ResumeHmm(object):
 
         return np.log(state_liks)
 
+    def init_state_log_like_matrix(self, d):
+        doc_prev = self.doc_prevs[d]
+        doc_prev_state = self.doc_states[doc_prev] if doc_prev != NULL_DOC else None
+
+        if doc_prev_state is None:  # beginning of resume sequence
+            state_liks = self.start_counts + pi  # s x 1
+            state_liks /= (num_seqs - 1 + sum_pi)
+        else:  # middle of sequence
+            state_liks = self.state_trans[doc_prev_state, :] + gamma
+        state_logliks = np.log(state_liks)
+
+        state_logliks += self.calc_state_topic_log_like_matrix(d)
+
+        return state_logliks
 
     def add_to_trans_counts(self, d):
         doc_state = self.doc_states[d]
