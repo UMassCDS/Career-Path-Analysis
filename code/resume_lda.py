@@ -91,19 +91,22 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
     #     job_descs_lda_seq = unflatten(job_descs_lda_counts, job_sequence_counts)
     # return job_descs_lda_seq
 
+    dump_topic_word_distribs(lda_model, termfreq_vectorizer, "topic_word_distribs.json", threshold=0.1)
+
     return jobs_lda_seq
 
 
 def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold=1.1):
-    num_topics, num_words = lda_model.shape
     topic_distribs = lda_model.components_ / lda_model.components_.sum(axis=1)[:, np.newaxis]
+    num_topics, num_words = topic_distribs.shape
+
     word_names = word_vectorizer.get_feature_names()
 
     with open(outfile_name, 'w') as outfile:
         for topic_id in range(num_topics):
             topic_distrib = topic_distribs[topic_id, :]
             word_freqs = [ (f, word_names[w]) for w, f in enumerate(topic_distrib) ]
-            word_freqs.sort()
+            word_freqs.sort(reverse=True)
 
             topic_words = []
             mass = 0.0
@@ -115,6 +118,10 @@ def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold
             json_str = json.dumps([topic_id, topic_words])
             outfile.write(json_str + "\n")
 
+            topic_words_str = ", ".join(["{} {:0.4f}".format(w, f) for w, f in topic_words])
+            print "topic {}:\t{}\n".format(topic_id, topic_words_str)
+
+
 
 def read_topic_word_distribs(infile_name, threshold=1.1):
     topic_word_distribs_unordered = []
@@ -122,7 +129,7 @@ def read_topic_word_distribs(infile_name, threshold=1.1):
     with open(infile_name, 'r') as infile:
         for line in infile:
             topic_id, word_freqs_raw = json.loads(line.rstrip("\n"))
-            word_freqs = sorted([(f, w) for f, w in word_freqs_raw])
+            word_freqs = sorted([(f, w) for f, w in word_freqs_raw], reverse=True)
             pos = 0
             mass = 0.0
             for freq, word in word_freqs:
@@ -211,7 +218,11 @@ if __name__ == '__main__':
 
     dump_json_resumes_lda(jobs_lda_sequenced, outfile_name)
 
-    # with open(outfile_name, 'w') as outfile:
+
+
+
+
+# with open(outfile_name, 'w') as outfile:
     #     json.dump(job_descs_lda_sequenced, outfile)
 
 
