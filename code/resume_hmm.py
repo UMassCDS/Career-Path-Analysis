@@ -429,17 +429,6 @@ if __name__ == '__main__':
 
 
 
-#######################
-# TODO:
-#
-# - seem to get different doc counts from scan and load... need to investigate
-#
-#
-#
-#
-#
-
-
 
 
 
