@@ -1,11 +1,15 @@
 import json
 import sys
+import logging
 import numpy as np
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 
 import resume_common
 from resume_import import load_json_resumes
+
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
 # # gets a list of lists of ResumeEntry objs
@@ -228,7 +232,7 @@ def scan_json_resumes_lda(infile_name, min_len=1, max_entries=sys.maxint):
 ###################################
 if __name__ == '__main__':
 
-    USAGE = " usage: " + sys.argv[0] + " resumes.json jobs_lda.json num_topics num_jobs"
+    USAGE = " usage: " + sys.argv[0] + " resumes.json resumes_lda.json topics_lda.json num_topics num_jobs"
     if len(sys.argv) < 5:
         sys.exit(USAGE)
     infile_name = sys.argv[1]
@@ -245,6 +249,7 @@ if __name__ == '__main__':
     #     for entry in res:
     #         resume.append(resume_common.ResumeEntry(*entry))
     #     resume_list.append(resume)
+    logging.info("loading raw resumes")
     resume_list = load_json_resumes(infile_name)  # list of lists of ResumeEntry
 
     # jobs_lda_sequenced = transform_descs_lda(resume_list,  # list of lists of topic distribs
@@ -252,7 +257,10 @@ if __name__ == '__main__':
     #                                          n_jobs=num_jobs,
     #                                          normalized=False)
 
+    logging.info("building lda model")
     lda = ResumeLDA(resume_list, num_topics, normalized=False, n_jobs=num_jobs)
+
+    logging.info("dumping output")
     dump_json_resumes_lda(lda.jobs_lda_seq, outfile_name)
     dump_topic_word_distribs(lda, topicfile_name, threshold=0.1)
 
