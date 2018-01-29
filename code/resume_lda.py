@@ -38,12 +38,13 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(mes
 
 
 class ResumeLDA(object):
-    def __init__(self, resume_list, n_topics, normalized=True, n_jobs=4):
-        jobs, job_sequence_counts = resume_common.flatten(resume_list)
-        job_descs = [j.desc for j in jobs]
+    # def __init__(self, resume_list, n_topics, normalized=True, n_jobs=4):
+    def __init__(self, job_descs_vectored, n_topics, normalized=True, n_jobs=4):
+        # jobs, job_sequence_counts = resume_common.flatten(resume_list)
+        # job_descs = [j.desc for j in jobs]
 
-        self.termfreq_vectorizer = CountVectorizer()
-        job_descs_vectored = self.termfreq_vectorizer.fit_transform(job_descs)
+        # self.termfreq_vectorizer = CountVectorizer()
+        # job_descs_vectored = self.termfreq_vectorizer.fit_transform(job_descs)
 
         self.lda_model = LatentDirichletAllocation(n_topics=n_topics,
                                               learning_method='batch',
@@ -63,8 +64,10 @@ class ResumeLDA(object):
         print "components_ shape: ", self.lda_model.components_.shape
         print "job_descs_lda shape: ", job_descs_lda.shape
 
-        jobs_lda = zip(jobs, job_descs_lda)
-        self.jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
+        self.job_descs_lda = job_descs_lda
+
+        # jobs_lda = zip(jobs, job_descs_lda)
+        # self.jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
 
 
 #
@@ -132,9 +135,10 @@ class ResumeLDA(object):
 #     return jobs_lda_seq
 
 
-def dump_topic_word_distribs(resume_lda, outfile_name, threshold=1.1):
-    lda_model = resume_lda.lda_model
-    word_vectorizer = resume_lda.termfreq_vectorizer
+# def dump_topic_word_distribs(resume_lda, outfile_name, threshold=1.1):
+#     lda_model = resume_lda.lda_model
+#     word_vectorizer = resume_lda.termfreq_vectorizer
+def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold=1.1):
 
     topic_distribs = lda_model.components_ / lda_model.components_.sum(axis=1)[:, np.newaxis]
     num_topics, num_words = topic_distribs.shape
@@ -257,12 +261,31 @@ if __name__ == '__main__':
     #                                          n_jobs=num_jobs,
     #                                          normalized=False)
 
-    logging.info("building lda model")
-    lda = ResumeLDA(resume_list, num_topics, normalized=False, n_jobs=num_jobs)
+    # we do this outside of the class so we can be aggressive about garbage collecting before
+    # we start multiprocessing within scikit's LDA
+    logging.info("flattening resumes")
+    jobs, job_sequence_counts = resume_common.flatten(resume_list)
+    del resume_list
+
+    logging.info("vectoring descriptions")
+    termfreq_vectorizer = CountVectorizer()
+    job_descs_vectored = termfreq_vectorizer.fit_transform([j.desc for j in jobs])
+    del jobs
+    del job_sequence_counts
+
+    logging.info("learning lda model")
+    lda = ResumeLDA(job_descs_vectored, num_topics, normalized=False, n_jobs=num_jobs)
+
+    logging.info("reloading raw resumes")
+    resume_list = load_json_resumes(infile_name)
+    jobs, job_sequence_counts = resume_common.flatten(resume_list)
+
+    jobs_lda = zip(jobs, lda.job_descs_lda)
+    jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
 
     logging.info("dumping output")
-    dump_json_resumes_lda(lda.jobs_lda_seq, outfile_name)
-    dump_topic_word_distribs(lda, topicfile_name, threshold=0.1)
+    dump_json_resumes_lda(jobs_lda_seq, outfile_name)
+    dump_topic_word_distribs(lda.lda_model, termfreq_vectorizer, topicfile_name, threshold=0.1)
 
 # with open(outfile_name, 'w') as outfile:
     #     json.dump(job_descs_lda_sequenced, outfile)
