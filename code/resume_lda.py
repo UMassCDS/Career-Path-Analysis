@@ -33,70 +33,105 @@ from resume_import import load_json_resumes
 #     return descs, job_sequence_counts
 
 
-def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
-    # job_descs, job_sequence_counts = get_descs_flat(resume_list)
-    jobs, job_sequence_counts = resume_common.flatten(resume_list)
-    job_descs = [ j.desc for j in jobs ]
+class ResumeLDA(object):
+    def __init__(self, resume_list, n_topics, normalized=True, n_jobs=4):
+        jobs, job_sequence_counts = resume_common.flatten(resume_list)
+        job_descs = [j.desc for j in jobs]
 
-    termfreq_vectorizer = CountVectorizer()
-    job_descs_vectored = termfreq_vectorizer.fit_transform(job_descs)
+        self.termfreq_vectorizer = CountVectorizer()
+        job_descs_vectored = self.termfreq_vectorizer.fit_transform(job_descs)
 
-    print "job_descs_vectored shape: ", job_descs_vectored.shape
-    print "doc 0", job_descs[0], job_descs_vectored[0, :], "\n"
-    print "doc 1", job_descs[1], job_descs_vectored[1, :], "\n"
-    print "doc 2", job_descs[2], job_descs_vectored[2, :], "\n"
+        self.lda_model = LatentDirichletAllocation(n_topics=n_topics,
+                                              learning_method='batch',
+                                              evaluate_every=10,
+                                              n_jobs=n_jobs,
+                                              verbose=10,
+                                              doc_topic_prior=None,
+                                              topic_word_prior=None)
+        if normalized:
+            job_descs_lda = self.lda_model.fit_transform(job_descs_vectored)
+        else:
+            self.lda_model.fit(job_descs_vectored)
+            job_descs_lda, _ = self.lda_model._e_step(job_descs_vectored,
+                                                 cal_sstats=False,
+                                                 random_init=False)
 
+        print "components_ shape: ", self.lda_model.components_.shape
+        print "job_descs_lda shape: ", job_descs_lda.shape
 
-    lda_model = LatentDirichletAllocation(n_topics=n_topics,
-                                          learning_method='batch',
-                                          evaluate_every=10,
-                                          n_jobs=n_jobs,
-                                          verbose=10,
-                                          doc_topic_prior=None,
-                                          topic_word_prior=None)
-    if normalized:
-        job_descs_lda = lda_model.fit_transform(job_descs_vectored)
-    else:
-        lda_model.fit(job_descs_vectored)
-        job_descs_lda, _ = lda_model._e_step(job_descs_vectored,
-                                      cal_sstats=False,
-                                      random_init=False)
-
-
+        jobs_lda = zip(jobs, job_descs_lda)
+        self.jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
 
 
+#
+#
+# def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
+#     # job_descs, job_sequence_counts = get_descs_flat(resume_list)
+#     jobs, job_sequence_counts = resume_common.flatten(resume_list)
+#     job_descs = [ j.desc for j in jobs ]
+#
+#     termfreq_vectorizer = CountVectorizer()
+#     job_descs_vectored = termfreq_vectorizer.fit_transform(job_descs)
+#
+#     print "job_descs_vectored shape: ", job_descs_vectored.shape
+#     print "doc 0", job_descs[0], job_descs_vectored[0, :], "\n"
+#     print "doc 1", job_descs[1], job_descs_vectored[1, :], "\n"
+#     print "doc 2", job_descs[2], job_descs_vectored[2, :], "\n"
+#
+#
+#     lda_model = LatentDirichletAllocation(n_topics=n_topics,
+#                                           learning_method='batch',
+#                                           evaluate_every=10,
+#                                           n_jobs=n_jobs,
+#                                           verbose=10,
+#                                           doc_topic_prior=None,
+#                                           topic_word_prior=None)
+#     if normalized:
+#         job_descs_lda = lda_model.fit_transform(job_descs_vectored)
+#     else:
+#         lda_model.fit(job_descs_vectored)
+#         job_descs_lda, _ = lda_model._e_step(job_descs_vectored,
+#                                       cal_sstats=False,
+#                                       random_init=False)
+#
+#
+#
+#
+#
+#     # for d, (desc, lda) in enumerate(zip(job_descs, job_descs_lda)):
+#     #     print "lda_topic_distrib", d, sum(lda), len(desc.split()), ": ", lda
+#
+#     print "components_ shape: ", lda_model.components_.shape
+#
+#     print "job_descs_lda shape: ", job_descs_lda.shape
+#     # for lda_distrib in job_descs_lda[:10]:
+#     #     print lda_distrib, ", sum=", sum(lda_distrib), [d*len(desc.split()) for d in lda_distrib], len(desc.split()), desc, "\n"
+#
+#     jobs_lda = zip(jobs, job_descs_lda)
+#     jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
+#
+#     # job_descs_lda_seq = unflatten(job_descs_lda, job_sequence_counts)
+#     # if normalized:
+#     # else:
+#     #     job_descs_lda_counts = [ [t*len(desc.split()) for t in lda] for desc, lda in zip(job_descs, job_descs_lda)]
+#     # print "job_descs_lda_counts shape: ", job_descs_lda.shape
+#     # print job_descs_lda_counts[:3]
+#     #
+#     #     for desc, lda_distrib in zip(job_descs, job_descs_lda)[:10]:
+#     #         print lda_distrib, [d*len(desc.split()) for d in lda_distrib], len(desc.split()), desc, "\n"
+#     #
+#     #     job_descs_lda_seq = unflatten(job_descs_lda_counts, job_sequence_counts)
+#     # return job_descs_lda_seq
+#
+#     dump_topic_word_distribs(lda_model, termfreq_vectorizer, "topic_word_distribs.json", threshold=0.1)
+#
+#     return jobs_lda_seq
 
-    # for d, (desc, lda) in enumerate(zip(job_descs, job_descs_lda)):
-    #     print "lda_topic_distrib", d, sum(lda), len(desc.split()), ": ", lda
 
-    print "components_ shape: ", lda_model.components_.shape
+def dump_topic_word_distribs(resume_lda, outfile_name, threshold=1.1):
+    lda_model = resume_lda.lda_model
+    word_vectorizer = resume_lda.termfreq_vectorizer
 
-    print "job_descs_lda shape: ", job_descs_lda.shape
-    # for lda_distrib in job_descs_lda[:10]:
-    #     print lda_distrib, ", sum=", sum(lda_distrib), [d*len(desc.split()) for d in lda_distrib], len(desc.split()), desc, "\n"
-
-    jobs_lda = zip(jobs, job_descs_lda)
-    jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
-
-    # job_descs_lda_seq = unflatten(job_descs_lda, job_sequence_counts)
-    # if normalized:
-    # else:
-    #     job_descs_lda_counts = [ [t*len(desc.split()) for t in lda] for desc, lda in zip(job_descs, job_descs_lda)]
-    # print "job_descs_lda_counts shape: ", job_descs_lda.shape
-    # print job_descs_lda_counts[:3]
-    #
-    #     for desc, lda_distrib in zip(job_descs, job_descs_lda)[:10]:
-    #         print lda_distrib, [d*len(desc.split()) for d in lda_distrib], len(desc.split()), desc, "\n"
-    #
-    #     job_descs_lda_seq = unflatten(job_descs_lda_counts, job_sequence_counts)
-    # return job_descs_lda_seq
-
-    dump_topic_word_distribs(lda_model, termfreq_vectorizer, "topic_word_distribs.json", threshold=0.1)
-
-    return jobs_lda_seq
-
-
-def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold=1.1):
     topic_distribs = lda_model.components_ / lda_model.components_.sum(axis=1)[:, np.newaxis]
     num_topics, num_words = topic_distribs.shape
 
@@ -122,17 +157,17 @@ def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold
             print "topic {}:\t{}\n".format(topic_id, topic_words_str)
 
 
-
 def read_topic_word_distribs(infile_name, threshold=1.1):
     topic_word_distribs_unordered = []
     max_id = -1
     with open(infile_name, 'r') as infile:
         for line in infile:
             topic_id, word_freqs_raw = json.loads(line.rstrip("\n"))
-            word_freqs = sorted([(f, w) for f, w in word_freqs_raw], reverse=True)
+            word_freqs = sorted([(w, f) for w, f in word_freqs_raw],
+                                reverse=True, key=lambda x: x[1])
             pos = 0
             mass = 0.0
-            for freq, word in word_freqs:
+            for word, freq in word_freqs:
                 pos += 1
                 mass += freq
                 if mass > threshold:
@@ -198,8 +233,9 @@ if __name__ == '__main__':
         sys.exit(USAGE)
     infile_name = sys.argv[1]
     outfile_name = sys.argv[2]
-    num_topics = int(sys.argv[3])
-    num_jobs = int(sys.argv[4])
+    topicfile_name = sys.argv[3]
+    num_topics = int(sys.argv[4])
+    num_jobs = int(sys.argv[5])
 
     # with open(infile_name, 'rb') as infile:
     #     resumes_raw = p.load(infile)
@@ -211,16 +247,14 @@ if __name__ == '__main__':
     #     resume_list.append(resume)
     resume_list = load_json_resumes(infile_name)  # list of lists of ResumeEntry
 
-    jobs_lda_sequenced = transform_descs_lda(resume_list,  # list of lists of topic distribs
-                                             n_topics=num_topics,
-                                             n_jobs=num_jobs,
-                                             normalized=False)
+    # jobs_lda_sequenced = transform_descs_lda(resume_list,  # list of lists of topic distribs
+    #                                          n_topics=num_topics,
+    #                                          n_jobs=num_jobs,
+    #                                          normalized=False)
 
-    dump_json_resumes_lda(jobs_lda_sequenced, outfile_name)
-
-
-
-
+    lda = ResumeLDA(resume_list, num_topics, normalized=False, n_jobs=num_jobs)
+    dump_json_resumes_lda(lda.jobs_lda_seq, outfile_name)
+    dump_topic_word_distribs(lda, topicfile_name, threshold=0.1)
 
 # with open(outfile_name, 'w') as outfile:
     #     json.dump(job_descs_lda_sequenced, outfile)

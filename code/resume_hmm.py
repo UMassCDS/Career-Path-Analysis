@@ -7,7 +7,7 @@ import os
 import os.path
 import numpy as np
 import scipy.special
-from resume_lda import load_json_resumes_lda, scan_json_resumes_lda
+from resume_lda import load_json_resumes_lda, scan_json_resumes_lda, read_topic_word_distribs
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
@@ -350,6 +350,22 @@ class ResumeHmm(object):
             except OSError:
                 continue
         return del_count
+
+    def dump_states(self, outfile, topic_word_file_name, topic_threshold=1.0, word_threshold=1.0):
+        topic_word_distribs = read_topic_word_distribs(topic_word_file_name, word_threshold)
+
+        for s in self.num_states:
+            topic_counts = self.state_topic_counts[s, :]
+
+            outfile.write("TOPIC {}\n".format(s))
+            mass = 0.0
+            for freq, topic_id in sorted([(m, t) for t, m in enumerate(topic_counts)], reverse=True):
+                words_str = " ".join(topic_word_distribs[topic_id])
+                outfile.write("\t{}\t{}\n".format(freq, words_str))
+                mass += freq
+                if mass > topic_threshold:
+                    break
+            outfile.write("\n")
 
 
 def sample_from_loglikes(state_log_likes):
