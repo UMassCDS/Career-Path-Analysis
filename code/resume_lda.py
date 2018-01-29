@@ -1,6 +1,6 @@
 import json
 import sys
-
+import numpy as np
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 
@@ -42,7 +42,9 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
     job_descs_vectored = termfreq_vectorizer.fit_transform(job_descs)
 
     print "job_descs_vectored shape: ", job_descs_vectored.shape
-    print job_descs_vectored[:3]
+    print "doc 0", job_descs[0], job_descs_vectored[0, :], "\n"
+    print "doc 1", job_descs[1], job_descs_vectored[1, :], "\n"
+    print "doc 2", job_descs[2], job_descs_vectored[2, :], "\n"
 
 
     lda_model = LatentDirichletAllocation(n_topics=n_topics,
@@ -60,8 +62,14 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
                                       cal_sstats=False,
                                       random_init=False)
 
-    for d, (desc, lda) in enumerate(zip(job_descs, job_descs_lda)):
-        print "lda_topic_distrib", d, sum(lda), len(desc.split()), ": ", lda
+
+
+
+
+    # for d, (desc, lda) in enumerate(zip(job_descs, job_descs_lda)):
+    #     print "lda_topic_distrib", d, sum(lda), len(desc.split()), ": ", lda
+
+    print "components_ shape: ", lda_model.components_.shape
 
     print "job_descs_lda shape: ", job_descs_lda.shape
     # for lda_distrib in job_descs_lda[:10]:
@@ -84,6 +92,51 @@ def transform_descs_lda(resume_list, n_topics=200, n_jobs=4, normalized=True):
     # return job_descs_lda_seq
 
     return jobs_lda_seq
+
+
+def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold=1.1):
+    num_topics, num_words = lda_model.shape
+    topic_distribs = lda_model.components_ / lda_model.components_.sum(axis=1)[:, np.newaxis]
+    word_names = word_vectorizer.get_feature_names()
+
+    with open(outfile_name, 'w') as outfile:
+        for topic_id in range(num_topics):
+            topic_distrib = topic_distribs[topic_id, :]
+            word_freqs = [ (f, word_names[w]) for w, f in enumerate(topic_distrib) ]
+            word_freqs.sort()
+
+            topic_words = []
+            mass = 0.0
+            for freq, word in word_freqs:
+                topic_words.append((word, freq))
+                mass += freq
+                if mass > threshold:
+                    break
+            json_str = json.dumps([topic_id, topic_words])
+            outfile.write(json_str + "\n")
+
+
+def read_topic_word_distribs(infile_name, threshold=1.1):
+    topic_word_distribs_unordered = []
+    max_id = -1
+    with open(infile_name, 'r') as infile:
+        for line in infile:
+            topic_id, word_freqs_raw = json.loads(line.rstrip("\n"))
+            word_freqs = sorted([(f, w) for f, w in word_freqs_raw])
+            pos = 0
+            mass = 0.0
+            for freq, word in word_freqs:
+                pos += 1
+                mass += freq
+                if mass > threshold:
+                    break
+            if topic_id > max_id:
+                max_id = topic_id
+            topic_word_distribs_unordered.append((topic_id, word_freqs[:pos]))
+    topic_word_distribs = [None]*max_id
+    for topic_id, word_freqs in topic_word_distribs_unordered:
+        topic_word_distribs[topic_id] = word_freqs
+    return topic_word_distribs
 
 
 # Even though we only use dump() here, define them together so they stay in sync
