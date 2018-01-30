@@ -237,7 +237,7 @@ def scan_json_resumes_lda(infile_name, min_len=1, max_entries=sys.maxint):
 def ts(spc=1):
     diff = datetime.datetime.now() - ts.t0
     return " "*spc + str(diff - datetime.timedelta(microseconds=diff.microseconds)) + \
-        "{:0.2f}".format(diff.microseconds/1000000.0) + " "*spc
+        "{:0.2f}".format(diff.microseconds/1000000.0)[1:] + " "*spc
 ts.t0 = datetime.datetime.now()
 
 
