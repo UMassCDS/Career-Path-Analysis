@@ -1,6 +1,7 @@
 import json
 import sys
 import logging
+import datetime
 import numpy as np
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
@@ -233,6 +234,13 @@ def scan_json_resumes_lda(infile_name, min_len=1, max_entries=sys.maxint):
     return resume_count, entry_count, topic_count
 
 
+def ts(spc=1):
+    diff = datetime.datetime.now() - ts.t0
+    return " "*spc + str(diff - datetime.timedelta(microseconds=diff.microseconds)) + \
+        "{:0.2f}".format(diff.microseconds/1000000.0) + " "*spc
+ts.t0 = datetime.datetime.now()
+
+
 ###################################
 if __name__ == '__main__':
 
@@ -253,7 +261,7 @@ if __name__ == '__main__':
     #     for entry in res:
     #         resume.append(resume_common.ResumeEntry(*entry))
     #     resume_list.append(resume)
-    logging.info("loading raw resumes")
+    logging.info(ts() + "loading raw resumes")
     resume_list = load_json_resumes(infile_name)  # list of lists of ResumeEntry
 
     # jobs_lda_sequenced = transform_descs_lda(resume_list,  # list of lists of topic distribs
@@ -263,27 +271,27 @@ if __name__ == '__main__':
 
     # we do this outside of the class so we can be aggressive about garbage collecting before
     # we start multiprocessing within scikit's LDA
-    logging.info("flattening resumes")
+    logging.info(ts() + "flattening resumes")
     jobs, job_sequence_counts = resume_common.flatten(resume_list)
     del resume_list
 
-    logging.info("vectoring descriptions")
+    logging.info(ts() + "vectoring descriptions")
     termfreq_vectorizer = CountVectorizer()
     job_descs_vectored = termfreq_vectorizer.fit_transform([j.desc for j in jobs])
     del jobs
     del job_sequence_counts
 
-    logging.info("learning lda model")
+    logging.info(ts() + "learning lda model")
     lda = ResumeLDA(job_descs_vectored, num_topics, normalized=False, n_jobs=num_jobs)
 
-    logging.info("reloading raw resumes")
+    logging.info(ts() + "reloading raw resumes")
     resume_list = load_json_resumes(infile_name)
     jobs, job_sequence_counts = resume_common.flatten(resume_list)
 
     jobs_lda = zip(jobs, lda.job_descs_lda)
     jobs_lda_seq = resume_common.unflatten(jobs_lda, job_sequence_counts)
 
-    logging.info("dumping output")
+    logging.info(ts() + "dumping output")
     dump_json_resumes_lda(jobs_lda_seq, outfile_name)
     dump_topic_word_distribs(lda.lda_model, termfreq_vectorizer, topicfile_name, threshold=0.1)
 
