@@ -162,9 +162,11 @@ def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold
             json_str = json.dumps([topic_id, topic_words])
             outfile.write(json_str + "\n")
 
-            topic_words_str = ", ".join(["{} {:0.4f}".format(w, f) for w, f in topic_words])
-            print "topic {}:\t{}\n".format(topic_id, topic_words_str)
-
+            try:
+                topic_words_str = ", ".join(["{} {:0.4f}".format(w, f) for w, f in topic_words])
+                print "topic {}:\t{}\n".format(topic_id, topic_words_str)
+            except UnicodeEncodeError as e:
+                print "topic {}: ERR".format(topic_id)
 
 def read_topic_word_distribs(infile_name, threshold=1.1):
     topic_word_distribs_unordered = []
