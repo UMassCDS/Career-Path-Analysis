@@ -293,7 +293,7 @@ if __name__ == '__main__':
 
     logging.info(ts() + "dumping output")
     dump_json_resumes_lda(jobs_lda_seq, outfile_name)
-    dump_topic_word_distribs(lda.lda_model, termfreq_vectorizer, topicfile_name, threshold=0.1)
+    dump_topic_word_distribs(lda.lda_model, termfreq_vectorizer, topicfile_name, threshold=0.5)
 
 # with open(outfile_name, 'w') as outfile:
     #     json.dump(job_descs_lda_sequenced, outfile)
