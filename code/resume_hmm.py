@@ -102,7 +102,9 @@ class ResumeHmm(object):
         timing_start = datetime.datetime.now()
 
         for i in range(start_iter, iterations):
-            logging.debug("iter {}".format(i))
+            state_change_count = 0.0
+
+            logging.debug("iter {} ({:0.4f} change)".format(i, state_change_count/self.num_docs))
             if i % timing_iters == 0:
                 ts_now = datetime.datetime.now()
                 logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))
@@ -118,10 +120,14 @@ class ResumeHmm(object):
                 state_log_likes = self.calc_state_topic_log_like_matrix(d)
                 state_log_likes += self.calc_state_state_log_like_matrix(d)
 
-                self.doc_states[d] = sample_from_loglikes(state_log_likes)
+                state_new = sample_from_loglikes(state_log_likes)
+                if self.doc_states[d] != state_new:
+                    state_change_count += 1
+                self.doc_states[d] = state_new
                 self.add_to_trans_counts(d)
                 self.add_to_topic_counts(d)
 
+            logging.debug("iter {} change: {:0.4f}".format(i, state_change_count/self.num_docs))
             if i % lag_iters == 0:
                 self.save_progress(i, save_dir)
 
@@ -422,7 +428,7 @@ if __name__ == '__main__':
     parser.add_argument('num_iters', type=int)
     parser.add_argument('--pi', type=float, default=1000.0)
     parser.add_argument('--gamma', type=float, default=1.0)
-    parser.add_argument('--lag', type=int, default=10)
+    parser.add_argument('--lag', type=int, default=1)
     parser.add_argument('--erase', action='store_true')
     parser.add_argument('--min_len', type=int, default=1)
     parser.add_argument('--num_docs', type=int, default=sys.maxint)
