@@ -30,11 +30,11 @@ def print_state_descs(state_topic_file_name, topic_word_file_name):
         count_topic_tups = sorted([ (p, i) for i, p in enumerate(state_topic_avg[s].tolist()) ],
                                   reverse=True)
         norm = sum(t[0] for t in count_topic_tups)
-        print count_topic_tups[:20]
+        # print count_topic_tups[:20]
         for count, topic in count_topic_tups[:10]:
             # print "count: ", count, "topic: ", topic, "words: ", topic_words[topic]
             perc = count/norm
-            words = [ "{}({:.2f})".format(w, f) for w, f in topic_words[topic][:10] ]
+            words = [ "{}({:.2f})".format(w, f) for w, f in topic_words[topic][:6] ]
             print "{:0.2f}\t{}".format(perc, ",  ".join(words))
         print "\n"
 
