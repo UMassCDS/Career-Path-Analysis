@@ -187,7 +187,7 @@ def read_topic_word_distribs(infile_name, threshold=1.1):
             if topic_id > max_id:
                 max_id = topic_id
             topic_word_distribs_unordered.append((topic_id, word_freqs[:pos]))
-    topic_word_distribs = [None]*max_id
+    topic_word_distribs = [None]*(max_id+1)
     for topic_id, word_freqs in topic_word_distribs_unordered:
         topic_word_distribs[topic_id] = word_freqs
     return topic_word_distribs
