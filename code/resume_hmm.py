@@ -104,7 +104,7 @@ class ResumeHmm(object):
         for i in range(start_iter, iterations):
             state_change_count = 0.0
 
-            logging.debug("iter {} ({:0.4f} change)".format(i, state_change_count/self.num_docs))
+            logging.debug("iter {}".format(i))
             if i % timing_iters == 0:
                 ts_now = datetime.datetime.now()
                 logging.debug("current pace {}/iter".format((ts_now - timing_start)//timing_iters))

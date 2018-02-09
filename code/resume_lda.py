@@ -168,6 +168,7 @@ def dump_topic_word_distribs(lda_model, word_vectorizer, outfile_name, threshold
             except UnicodeEncodeError as e:
                 print "topic {}: ERR".format(topic_id)
 
+
 def read_topic_word_distribs(infile_name, threshold=1.1):
     topic_word_distribs_unordered = []
     max_id = -1
