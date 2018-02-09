@@ -18,7 +18,9 @@ def print_state_descs(state_topic_file_name, topic_word_file_name):
         state_topic_sums = np.array(iter0, np.double)
         iter_count = 1
 
-        for line in state_topic_file:
+        for line_num, line in enumerate(state_topic_file):
+            if line_num % 10 == 0:
+                print "\t", line_num
             ts, i, json_str = line.rstrip("\n").split("\t")
             state_topic_sums += np.array(json.loads(json_str), np.double)
             iter_count += 1
@@ -28,6 +30,7 @@ def print_state_descs(state_topic_file_name, topic_word_file_name):
         print "state {} topics:".format(s)
         perc_top_tups = sorted([ (p, i) for i, p in enumerate(state_topic_avg[s].tolist()) ],
                                reverse=True)
+        print perc_top_tups[:20]
         for perc, top in perc_top_tups[:10]:
             print "{:0.2f}\t{}".format(perc, "  ".join(topic_words[top]))
         print "\n"
