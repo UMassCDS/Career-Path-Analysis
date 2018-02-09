@@ -10,12 +10,17 @@ def print_state_descs(state_topic_file_name, topic_word_file_name):
     topic_words = read_topic_word_distribs(topic_word_file_name)
 
     with open(state_topic_file_name, 'r') as state_topic_file:
-        iter0 = json.loads(state_topic_file.readline().rstrip("\n"))  # SxT 2d arr
+        ts, i, line0 = state_topic_file.readline().rstrip("\n").split("\t")
+        print "line0: ", line0[:200]
+        iter0 = json.loads(line0)
+        print "iter0: ", iter0[:10]
+        #iter0 = json.loads(state_topic_file.readline().rstrip("\n"))  # SxT 2d arr
         state_topic_sums = np.array(iter0, np.double)
         iter_count = 1
 
         for line in state_topic_file:
-            state_topic_sums += np.array(json.loads(line.rstrip("\n")), np.double)
+            ts, i, json_str = line.rstrip("\n").split("\t")
+            state_topic_sums += np.array(json.loads(json_str), np.double)
             iter_count += 1
     state_topic_avg = state_topic_sums / iter_count
 
