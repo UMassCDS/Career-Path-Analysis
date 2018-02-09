@@ -11,10 +11,9 @@ def print_state_descs(state_topic_file_name, topic_word_file_name):
 
     with open(state_topic_file_name, 'r') as state_topic_file:
         ts, i, line0 = state_topic_file.readline().rstrip("\n").split("\t")
-        print "line0: ", line0[:200]
+        # print "line0: ", line0[:200]
         iter0 = json.loads(line0)
-        print "iter0: ", iter0[:10]
-        #iter0 = json.loads(state_topic_file.readline().rstrip("\n"))  # SxT 2d arr
+        # print "iter0: ", iter0[:10]
         state_topic_sums = np.array(iter0, np.double)
         iter_count = 1
 
@@ -35,8 +34,8 @@ def print_state_descs(state_topic_file_name, topic_word_file_name):
         for count, topic in count_topic_tups[:10]:
             # print "count: ", count, "topic: ", topic, "words: ", topic_words[topic]
             perc = count/norm
-            words = [ w for w, f in topic_words[topic] ]
-            print "{:0.2f}\t{}".format(perc, "  ".join(words))
+            words = [ "{}({:.2f})".format(w, f) for w, f in topic_words[topic][:10] ]
+            print "{:0.2f}\t{}".format(perc, ",  ".join(words))
         print "\n"
 
 
