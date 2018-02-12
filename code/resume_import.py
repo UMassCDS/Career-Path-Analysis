@@ -15,13 +15,14 @@ import resume_common
 BIGRAM_DELIM = '_'
 
 
-def get_company_name(experiencerecord):
+def get_company_name(experiencerecord, addloc=True):
     company_name = experiencerecord.find('Company').text
-    location = experiencerecord.find('Location').text if experiencerecord.find('Location') is not None else None
-
     ret = clean_name(company_name)
-    if (location is not None) and (len(location.strip()) > 0):
-        ret += " (" + clean_name(location) + ")"
+    if addloc:
+        location = experiencerecord.find('Location').text if experiencerecord.find('Location') \
+                                                             is not None else None
+        if (location is not None) and (len(location.strip()) > 0):
+            ret += " (" + clean_name(location) + ")"
     return ret
 
 
