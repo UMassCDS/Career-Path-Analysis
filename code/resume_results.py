@@ -70,7 +70,7 @@ def get_state_descs(state_topic_file_name, topic_word_file_name, num_words):
         for count, topic in count_topic_tups:
             perc = count/norm
 
-            for word, freq in topic_words[topic][:50]:
+            for word, freq in topic_words[topic][:500]:
                 word__score[word] = word__score.get(word, 0.0) + freq*perc
 
         words = sorted(word__score.items(), key=lambda x: x[1], reverse=True)
@@ -91,9 +91,9 @@ if __name__ == '__main__':
 
 
     # print_state_descs(s_t_file_name, t_w_file_name)
-    state_descs = get_state_descs(s_t_file_name, t_w_file_name, 10)
+    state_descs = get_state_descs(s_t_file_name, t_w_file_name, 20)
     for i, words in enumerate(state_descs):
-        print i, words, "\n"
+        print i, ["{}({:.4f})".format(w, f) for w, f in words], "\n"
 
 
 
