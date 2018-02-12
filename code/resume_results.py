@@ -78,8 +78,18 @@ def get_state_descs(state_topic_file_name, topic_word_file_name, num_words):
     return state_words
 
 
+def print_top_trans(state_state_file_name, state_descs):
+    state_state_avg = get_mean_vals(state_state_file_name)
 
+    for s1 in range(state_state_avg.shape[0]):
+        s2_freq_tups = sorted([(s, f) for s, f in enumerate(state_state_avg[s1])],
+                              key=lambda x: x[1], reverse=True)
 
+        print "state", s1, state_descs[s1], "\n"
+        for s2, f in s2_freq_tups[:5]:
+            print "\t{:.2f} {}".format(f, s2), state_descs[s2], "\n"
+
+        print "\n\n"
 
 
 
@@ -88,12 +98,15 @@ if __name__ == '__main__':
 
     s_t_file_name = sys.argv[1]
     t_w_file_name = sys.argv[2]
-
+    s_s_file_name = sys.argv[3]
 
     # print_state_descs(s_t_file_name, t_w_file_name)
     state_descs = get_state_descs(s_t_file_name, t_w_file_name, 20)
-    for i, words in enumerate(state_descs):
-        print i, ["{}({:.4f})".format(w, f) for w, f in words], "\n"
 
+    state_descs_str = ["{}({:.4f})".format(w, f) for w, f in state_descs]
 
+    # for i, words in enumerate(state_descs):
+    #     print i, ["{}({:.4f})".format(w, f) for w, f in words], "\n"
+
+    print_top_trans(s_s_file_name, state_descs_str)
 
