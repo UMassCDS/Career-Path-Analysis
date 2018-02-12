@@ -25,6 +25,11 @@ def get_company_name(experiencerecord):
     return ret
 
 
+def get_title(experiencerecord):
+    title = experiencerecord.find('Title').text
+    return clean_name(title)
+
+
 def get_description(experiencerecord):
     desc_elt = experiencerecord.find('Description')
     if desc_elt is not None:
