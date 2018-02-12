@@ -114,8 +114,8 @@ def timeline2pretty(idx, timeline):
     return ret
 
 
-def xml2resumes(infile_names):
-    timelines = []
+def xml2resumes(infile_names, parse_func):
+    parsed_all = []
 
     for f, infile_name in enumerate(infile_names):
         sys.stderr.write("parsing xml {}/{} {}\n".format(f+1, len(infile_names), infile_name))
@@ -130,11 +130,11 @@ def xml2resumes(infile_names):
         for i, resume_xml in enumerate(root.findall('resume')):
             if i % 1000 == 0:
                 sys.stderr.write("{}\n".format(i))
-            timeline = parse_resume(resume_xml)
+            parsed = parse_func(resume_xml)
             # sys.stderr.write(timeline2pretty(resume.find('ResumeID').text, timeline) + "\n\n")
-            if len(timeline) > 0:
-                timelines.append(timeline)
-    return timelines
+            if parsed:
+                parsed_all.append(parsed)
+    return parsed_all
 
 
 def timelines2descs(timelines):
@@ -261,7 +261,7 @@ if __name__ == '__main__':
     out = sys.argv[-1]
 
     sys.stderr.write(str(ins) + "\n")
-    resumes = xml2resumes(ins)
+    resumes = xml2resumes(ins, parse_resume)
     sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
     resumes_clean = clean_resume_descs(resumes)
