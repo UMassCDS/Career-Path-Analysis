@@ -149,7 +149,13 @@ def parse_resume_db(resume_xml):
     #   'RelocationComments'
     #   'ChannelName'
 
-    insert_row(RESUME_TABLE, attrs)
+    try:
+        insert_row(RESUME_TABLE, attrs)
+    except Exception as err:
+        logging.warning("error inserting row")
+
+        # if we can't insert the resume row, don't bother with the others
+        return False
 
     # Now look through job experience entries
     # experiences = []
@@ -313,10 +319,8 @@ def insert_row(table_name, col__val):
     try:
         get_cursor().execute(sql, vals)
     except Exception as err:
-        # sql_filled = sql % vals
-        # sys.stderr.write("error inserting record: " + sql_filled + "\n")
-        sys.stderr.write("error inserting record: {} {}\n\n".format(sql, vals))
-        raise
+        logging.warning("error inserting record: {} {}".format(sql, vals))
+        raise err
 
 
 def commit():
@@ -355,11 +359,13 @@ if __name__ == '__main__':
 
     _dbhost = args.host
 
+    logging.debug("got {} input files: \n\t{}".format(len(args.infile_names),
+                                                      "\n\t".join(args.infile_names)))
 
-
+    logging.info("creating tables")
     create_all_tables(overwrite=True)
 
-    sys.stderr.write(str(args.infile_names) + "\n")
+    logging.info("loading infiles")
     resume_import.xml2resumes(args.infile_names, parse_resume_db)
     # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
