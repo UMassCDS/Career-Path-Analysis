@@ -1,11 +1,13 @@
 import sys
 import re
+import getpass
+import argparse
 import psycopg2 as db
 import resume_import
 import resume_common
 
 DB_NAME = 'careerpaths'
-DB_USER = 'rattigan'
+# DB_USER = None
 
 RESUME_TABLE = 'resumes'
 RESUME_COLS = [
@@ -249,10 +251,16 @@ def sort_stints(resume):
 
 
 _connection = None
-def get_connection():
+_dbhost = None
+def get_connection(u=None):
     global _connection
+    global _dbhost
+
     if not _connection:
-        _connection = db.connect("dbname={} user={}".format(DB_NAME, DB_USER))
+        user = raw_input("db username: ")
+        passw = getpass.getpass("db password: ")
+        connstr = "host='{}' dbname={} user={} password='{}'".format(_dbhost, DB_NAME, user, passw)
+        _connection = db.connect(connstr)
     return _connection
 
 
@@ -333,10 +341,14 @@ def decamel(name):
 #####################################
 
 if __name__ == '__main__':
-    USAGE = " usage: " + sys.argv[0] + " infile0.tgz [infile1.tgz infile2.tgz ...]"
-    if len(sys.argv) < 2:
-        sys.exit(USAGE)
-    ins = sys.argv[1:]
+
+    parser = argparse.ArgumentParser(description='Import resume data into relational db')
+    parser.add_argument('--host', default='localhost')
+    # parser.add_argument('--user', default=None)
+    parser.add_argument('infile_names', nargs='+')
+    args = parser.parse_args()
+
+    _dbhost = args.host
 
     create_all_tables(overwrite=True)
 
@@ -345,6 +357,8 @@ if __name__ == '__main__':
     # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
     commit()
+
+
 
 
 
