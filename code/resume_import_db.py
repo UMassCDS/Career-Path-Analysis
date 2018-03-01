@@ -73,8 +73,17 @@ EDU_COLS = [
 
 
 
-
-
+def parse_all_resumes(infile_names):
+    resume_count = 0
+    err_count = 0
+    for resume_xml in resume_import.get_resume_xmls(infile_names):
+        resume_count += 1
+        ret = parse_resume_db(resume_xml)
+        if ret:
+            err_count += 1
+    if err_count > 0:
+        logging.warning("encountered {} errors while loading {} resumes".format(err_count,
+                                                                                resume_count))
 
 
 # 		<ResumeID>82408838</ResumeID>
@@ -152,7 +161,7 @@ def parse_resume_db(resume_xml):
     try:
         insert_row(RESUME_TABLE, attrs)
     except Exception as err:
-        logging.warning("error inserting row")
+        logging.warning("error inserting row: {}".format(err))
 
         # if we can't insert the resume row, don't bother with the others
         return False
@@ -214,7 +223,7 @@ def parse_resume_db(resume_xml):
     #         school = unidecode.unidecode("EDU " + school_id + " " + school_name)
     #         stints.append((None, grad_date, school))
 
-    return None
+    return 0
 
 
 def sort_stints(resume):

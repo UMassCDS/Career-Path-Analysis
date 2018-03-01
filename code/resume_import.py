@@ -3,6 +3,7 @@ import string
 import datetime
 import gzip
 import json
+import logging
 import xml.etree.ElementTree as ET
 
 import nltk
@@ -10,6 +11,9 @@ import nltk.collocations
 from nltk.corpus import stopwords
 
 import resume_common
+
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
 BIGRAM_DELIM = '_'
@@ -152,6 +156,23 @@ def xml2resumes(infile_names, parse_func):
             if parsed:
                 parsed_all.append(parsed)
     return parsed_all
+
+
+def get_resume_xmls(infile_names):
+    for f, infile_name in enumerate(infile_names):
+        logging.debug("parsing xml {}/{} {}\n".format(f+1, len(infile_names), infile_name))
+
+        if infile_name.endswith('.gz'):
+            with gzip.open(infile_name, 'rb') as infile:
+                tree = ET.parse(infile)
+        else:
+            tree = ET.parse(infile_name)
+
+        root = tree.getroot()
+        for i, resume_xml in enumerate(root.findall('resume')):
+            if i % 1000 == 0:
+                logging.debug("\t{}\n".format(i))
+            yield resume_xml
 
 
 def timelines2descs(timelines):
