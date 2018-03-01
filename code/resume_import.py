@@ -160,7 +160,7 @@ def xml2resumes(infile_names, parse_func):
 
 def get_resume_xmls(infile_names):
     for f, infile_name in enumerate(infile_names):
-        logging.debug("parsing xml {}/{} {}\n".format(f+1, len(infile_names), infile_name))
+        logging.debug("parsing xml {}/{} {}".format(f+1, len(infile_names), infile_name))
 
         if infile_name.endswith('.gz'):
             with gzip.open(infile_name, 'rb') as infile:
@@ -171,7 +171,7 @@ def get_resume_xmls(infile_names):
         root = tree.getroot()
         for i, resume_xml in enumerate(root.findall('resume')):
             if i % 1000 == 0:
-                logging.debug("\t{}\n".format(i))
+                logging.debug("\t{}".format(i))
             yield resume_xml
 
 
