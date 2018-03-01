@@ -2,9 +2,14 @@ import sys
 import re
 import getpass
 import argparse
+import logging
 import psycopg2 as db
 import resume_import
 import resume_common
+
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
+
 
 DB_NAME = 'careerpaths'
 # DB_USER = None
@@ -350,10 +355,12 @@ if __name__ == '__main__':
 
     _dbhost = args.host
 
+
+
     create_all_tables(overwrite=True)
 
-    sys.stderr.write(str(ins) + "\n")
-    resume_import.xml2resumes(ins, parse_resume_db)
+    sys.stderr.write(str(args.infile_names) + "\n")
+    resume_import.xml2resumes(args.infile_names, parse_resume_db)
     # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
     commit()
