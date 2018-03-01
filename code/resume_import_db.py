@@ -76,11 +76,14 @@ EDU_COLS = [
 def parse_all_resumes(infile_names):
     resume_count = 0
     err_count = 0
-    for resume_xml in resume_import.get_resume_xmls(infile_names):
+    for i, resume_xml in enumerate(resume_import.get_resume_xmls(infile_names)):
         resume_count += 1
         ret = parse_resume_db(resume_xml)
         if ret:
             err_count += 1
+        if i % 1000 == 0:
+            commit()
+
     if err_count > 0:
         logging.warning("encountered {} errors while loading {} resumes".format(err_count,
                                                                                 resume_count))
@@ -375,7 +378,9 @@ if __name__ == '__main__':
     create_all_tables(overwrite=True)
 
     logging.info("loading infiles")
-    resume_import.xml2resumes(args.infile_names, parse_resume_db)
+    # resume_import.xml2resumes(args.infile_names, parse_resume_db)
+    parse_all_resumes(args.infile_names)
+
     # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
     commit()
