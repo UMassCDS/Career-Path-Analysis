@@ -39,16 +39,27 @@ def get_description(experiencerecord):
     return ""
 
 
-def clean_name(s):
+def get_states(resrec):
+    states = set()
+    locs = resrec.find('locations')
+    if locs is not None:
+        for locrec in locs:
+            loc = locrec.findtext('StateAbbrev')
+            if loc is not None:
+                states.add(loc)
+    return states
+
+
+def clean_name(s, null_val=''):
     if s is not None:
         try:
             clean = str(s)
         except UnicodeEncodeError:
             clean = s.encode('ascii', 'ignore')
-        clean = clean.lower().translate(string.maketrans("", ""), string.punctuation)
+        clean = clean.lower().translate(string.maketrans("", ""), string.punctuation).strip()
         return clean
     else:
-        return ""
+        return null_val
 
 
 def make_date(year_elt, month_elt):

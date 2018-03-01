@@ -4,45 +4,61 @@ import psycopg2 as db
 import resume_import
 import resume_common
 
+DB_NAME = 'careerpaths'
+DB_USER = 'rattigan'
 
-
+RESUME_TABLE = 'resumes'
 RESUME_COLS = [
-    ('resume_id', 'INTEGER'),
+    ('resume_id', 'INTEGER PRIMARY KEY'),
+    ('resume_title', 'TEXT'),
+    ('desired_job_title', 'VARCHAR(256)'),
+    ('state', 'VARCHAR(256)'),
+    ('salary', 'FLOAT'),
+    ('currency_name', 'VARCHAR(8)'),
+    ('summary', 'TEXT'),
+    ('additional_info', 'TEXT'),
+    ('will_relocate', 'BOOLEAN'),
+    ('commute_distance', 'INTEGER'),
+    ('willingness_to_travel_internal_name', 'VARCHAR(32)'),
     ('wants_permanent', 'BOOLEAN'),
     ('wants_contract', 'BOOLEAN'),
-    ('wants_intern>', 'BOOLEAN'),
-    ('wants_temp>', 'BOOLEAN'),
-    ('wants_fullTime', 'BOOLEAN'),
-    ('wants_partTime', 'BOOLEAN'),
-    ('wants_perDiem', 'BOOLEAN'),
+    ('wants_intern', 'BOOLEAN'),
+    ('wants_temp', 'BOOLEAN'),
+    ('wants_full_time', 'BOOLEAN'),
+    ('wants_part_time', 'BOOLEAN'),
+    ('wants_per_diem', 'BOOLEAN'),
     ('wants_overtime', 'BOOLEAN'),
     ('wants_weekends', 'BOOLEAN'),
     ('prefer_weekends', 'BOOLEAN'),
     ('wants_seasonal', 'BOOLEAN'),
-    ('will_relocate', 'BOOLEAN'),
-    ('currency_name', 'VARCHAR(8)'),
-    ('additional_info', 'TEXT'),
-    ('resume_title', 'TEXT'),
-    ('summary', 'TEXT'),
-    ('willingness_to_travel_internal_name', 'VARCHAR(32)'),
     ('date_created', 'DATE'),
-    ('date_modified', 'DATE'),
-    ('desired_job_title', 'VARCHAR(64)'),
-    ('salary', 'FLOAT')
-    ('commute_distance', 'INTEGER')
-    ('state', 'VARCHAR(16)')
+    ('date_modified', 'DATE')
 ]
 
+JOB_TABLE = 'jobs'
 JOB_COLS = [
+    ('job_id', 'SERIAL PRIMARY KEY'),
     ('resume_id', 'INTEGER'),
-    ('start', 'DATE'),
-    ('end', 'DATE'),
-    ('company_name', 'VARCHAR(64)'),
-    ('location', 'VARCHAR(128)'),
-    ('title', 'VARCHAR(64)'),
-    ('description', 'TEXT)')
+    ('start_dt', 'DATE'),
+    ('end_dt', 'DATE'),
+    ('company_name', 'VARCHAR(256)'),
+    ('location', 'VARCHAR(256)'),
+    ('title', 'VARCHAR(256)'),
+    ('description', 'TEXT')
 ]
 
+EDU_TABLE = 'schools'
+EDU_COLS = [
+    ('edu_id', 'SERIAL PRIMARY KEY'),
+    ('resume_id', 'INTEGER'),
+    ('school_id', 'INTEGER'),
+    ('school_name', 'VARCHAR(256)'),
+    ('city', 'VARCHAR(256)'),
+    ('state', 'VARCHAR(64)'),
+    ('grad_date', 'DATE'),
+    ('gpa', 'FLOAT'),
+    ('summary', 'TEXT')
+]
 
 
 # https://www.dataquest.io/blog/loading-data-into-postgres/
@@ -89,8 +105,8 @@ def parse_resume_db(resume_xml):
 
     for attr_name in ['WantsPermanent',
                       'WantsContract',
-                      'WantsIntern>',
-                      'WantsTemp>',
+                      'WantsIntern',
+                      'WantsTemp',
                       'WantsFullTime',
                       'WantsPartTime',
                       'WantsPerDiem',
@@ -107,9 +123,10 @@ def parse_resume_db(resume_xml):
                       'Summary',
                       'WillingnessToTravelInternalName',
                       'DateCreated',
-                      'DateModified',
-                      'DesiredJobTitle']:
+                      'DateModified']:
         attrs[decamel(attr_name)] = resume_xml.findtext(attr_name)
+
+    attrs['desired_job_title'] = resume_import.clean_name(resume_xml.findtext('DesiredJobTitle'))
 
     sal = floatnone(resume_xml.findtext('Salary'))
     if (sal is not None) and (sal < 1000):
@@ -125,8 +142,10 @@ def parse_resume_db(resume_xml):
     #   'RelocationComments'
     #   'ChannelName'
 
+    insert_row(RESUME_TABLE, attrs)
+
     # Now look through job experience entries
-    experiences = []
+    # experiences = []
     experience = resume_xml.find('experience')
     if experience is not None:
         stints = []
@@ -142,27 +161,47 @@ def parse_resume_db(resume_xml):
 
         for start, end, company_name, location, title, description in sort_stints(stints):
             exp_attrs = { 'resume_id': resume_id,
-                          'start': start,
-                          'end': end,
+                          'start_dt': start,
+                          'end_dt': end,
                           'company_name': company_name,
                           'location': location,
                           'title': title,
                           'description': description }
-            experiences.append(exp_attrs)
-    attrs['experience'] = experiences
+            insert_row(JOB_TABLE, exp_attrs)
+            # experiences.append(exp_attrs)
 
-    # education = resume.find('education')
-    # if education is not None:
-    #     for schoolrecord in education:
-    #         grad_date = make_date(schoolrecord.find('CompleteYear'), schoolrecord.find('CompleteMonth'))
-    #         school_name = schoolrecord.find('School').text if schoolrecord.find('School').text is not None else ""
-    #         school_id = schoolrecord.find('SchoolId').text if schoolrecord.find('SchoolId').text is not None else ""
+
+    # <schoolrecord>
+    # 		<City>Glendale</City>
+    # 		<CompleteMonth>5</CompleteMonth>
+    # 		<CompleteYear>1977</CompleteYear>
+    # 		<EducationSubject/>
+    # 		<EducationSummary/>
+    # 		<GPA>0.00</GPA>
+    # 		<School>Glendale Community College</School>
+    # 		<SchoolId>3359</SchoolId>
+    # 		<State>Arizona</State>
+    # 		<DisplaySort>110</DisplaySort>
+    # 	</schoolrecord>
+    education = resume_xml.find('education')
+    if education is not None:
+        for schoolrecord in education:
+            edu_attrs = dict()
+            edu_attrs['resume_id'] = resume_id
+            edu_attrs['grad_date'] = resume_import.make_date(schoolrecord.find('CompleteYear'),
+                                                schoolrecord.find('CompleteMonth'))
+            edu_attrs['school_name'] = resume_import.clean_name(schoolrecord.findtext('School'))
+            edu_attrs['school_id'] = schoolrecord.findtext('SchoolId')
+            edu_attrs['city'] = resume_import.clean_name(schoolrecord.findtext('City'))
+            edu_attrs['state'] = resume_import.clean_name(schoolrecord.findtext('State'))
+            edu_attrs['summary'] = schoolrecord.findtext('EducationSummary')
+            edu_attrs['gpa'] = schoolrecord.findtext('GPA')
+            insert_row(EDU_TABLE, edu_attrs)
+
     #         school = unidecode.unidecode("EDU " + school_id + " " + school_name)
     #         stints.append((None, grad_date, school))
 
-    return attrs
-
-
+    return None
 
 
 def sort_stints(resume):
@@ -209,10 +248,66 @@ def sort_stints(resume):
     return stints_sorted
 
 
-def resume_to_table(attrs):
+_connection = None
+def get_connection():
+    global _connection
+    if not _connection:
+        _connection = db.connect("dbname={} user={}".format(DB_NAME, DB_USER))
+    return _connection
 
 
-def job_entry_to_table(attrs):
+_cursor = None
+def get_cursor():
+    global _cursor
+    if not _cursor:
+        _cursor = get_connection().cursor()
+    return _cursor
+
+
+def create_all_tables(overwrite=False):
+    curs = get_cursor()
+
+    if overwrite:
+        drop_table(curs, RESUME_TABLE)
+        drop_table(curs, JOB_TABLE)
+        drop_table(curs, EDU_TABLE)
+    create_table(curs, RESUME_TABLE, RESUME_COLS)
+    create_table(curs, JOB_TABLE, JOB_COLS)
+    create_table(curs, EDU_TABLE, EDU_COLS)
+
+
+def create_table(curs, table_name, col_tups, key_idx=None):
+    sql = "CREATE TABLE " + table_name + " ("
+    sql += ", ".join([nam + " " + typ for nam, typ in col_tups])
+    sql += ")"
+    curs.execute(sql)
+
+
+def drop_table(curs, table_name):
+    sql = "DROP TABLE IF EXISTS " + table_name
+    curs.execute(sql)
+
+
+def insert_row(table_name, col__val):
+    col_val_tups = col__val.items()
+    cols = [ t[0] for t in col_val_tups ]
+    vals = [ t[1] for t in col_val_tups ]
+    sql = "INSERT INTO " + table_name + " ("
+    sql += ", ".join(cols)
+    sql += ") VALUES ("
+    sql += ", ".join(["%s"]*len(vals))
+    sql += ")"
+    try:
+        get_cursor().execute(sql, vals)
+    except Exception as err:
+        # sql_filled = sql % vals
+        # sys.stderr.write("error inserting record: " + sql_filled + "\n")
+        sys.stderr.write("error inserting record: {} {}\n\n".format(sql, vals))
+        raise
+
+
+def commit():
+    get_connection().commit()
 
 
 def boolnone(txt):
@@ -238,17 +333,18 @@ def decamel(name):
 #####################################
 
 if __name__ == '__main__':
-    USAGE = " usage: " + sys.argv[0] + " infile0.tgz [infile1.tgz infile2.tgz ...] outfile.json"
-    if len(sys.argv) < 3:
+    USAGE = " usage: " + sys.argv[0] + " infile0.tgz [infile1.tgz infile2.tgz ...]"
+    if len(sys.argv) < 2:
         sys.exit(USAGE)
-    ins = sys.argv[1:-1]
-    out = sys.argv[-1]
+    ins = sys.argv[1:]
+
+    create_all_tables(overwrite=True)
 
     sys.stderr.write(str(ins) + "\n")
-    resumes = resume_import.xml2resumes(ins, parse_resume_db)
-    sys.stderr.write("read {} resumes\n".format(len(resumes)))
+    resume_import.xml2resumes(ins, parse_resume_db)
+    # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
-
+    commit()
 
 
 
