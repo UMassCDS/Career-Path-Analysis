@@ -148,8 +148,9 @@ def parse_resume_db(resume_xml):
     attrs['desired_job_title'] = resume_import.clean_name(resume_xml.findtext('DesiredJobTitle'))
 
     sal = floatnone(resume_xml.findtext('Salary'))
-    if (sal is not None) and (sal < 1000):
-        sal *= 40*52
+    # this is messed up
+    # if (sal is not None) and (sal < 1000):
+    #     sal *= 40*52
     attrs['salary'] = sal
 
     attrs['commute_distance'] = intnone(resume_xml.findtext('CommuteDistance'))
