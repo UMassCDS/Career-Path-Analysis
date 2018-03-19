@@ -136,25 +136,32 @@ def timeline2pretty(idx, timeline):
 
 
 def xml2resumes(infile_names, parse_func):
+    # parsed_all = []
+    #
+    # for f, infile_name in enumerate(infile_names):
+    #     sys.stderr.write("parsing xml {}/{} {}\n".format(f+1, len(infile_names), infile_name))
+    #
+    #     if infile_name.endswith('.gz'):
+    #         with gzip.open(infile_name, 'rb') as infile:
+    #             tree = ET.parse(infile)
+    #     else:
+    #         tree = ET.parse(infile_name)
+    #
+    #     root = tree.getroot()
+    #     for i, resume_xml in enumerate(root.findall('resume')):
+    #         if i % 1000 == 0:
+    #             sys.stderr.write("{}\n".format(i))
+    #         parsed = parse_func(resume_xml)
+    #         # sys.stderr.write(timeline2pretty(resume.find('ResumeID').text, timeline) + "\n\n")
+    #         if parsed:
+    #             parsed_all.append(parsed)
+
     parsed_all = []
+    for resume_xml in get_resume_xmls(infile_names):
+        parsed = parse_func(resume_xml)
+        if parsed:
+            parsed_all.append(parsed)
 
-    for f, infile_name in enumerate(infile_names):
-        sys.stderr.write("parsing xml {}/{} {}\n".format(f+1, len(infile_names), infile_name))
-
-        if infile_name.endswith('.gz'):
-            with gzip.open(infile_name, 'rb') as infile:
-                tree = ET.parse(infile)
-        else:
-            tree = ET.parse(infile_name)
-
-        root = tree.getroot()
-        for i, resume_xml in enumerate(root.findall('resume')):
-            if i % 1000 == 0:
-                sys.stderr.write("{}\n".format(i))
-            parsed = parse_func(resume_xml)
-            # sys.stderr.write(timeline2pretty(resume.find('ResumeID').text, timeline) + "\n\n")
-            if parsed:
-                parsed_all.append(parsed)
     return parsed_all
 
 
