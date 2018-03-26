@@ -274,6 +274,146 @@ def sort_stints(resume):
     return stints_sorted
 
 
+STATE__ABBREV = {
+    'ALABAMA': 'AL',
+    'ALASKA': 'AK',
+    'ARIZONA': 'AZ',
+    'ARKANSAS': 'AR',
+    'CALIFORNIA': 'CA',
+    'COLORADO': 'CO',
+    'CONNECTICUT': 'CT',
+    'DELAWARE': 'DE',
+    'FLORIDA': 'FL',
+    'GEORGIA': 'GA',
+    'HAWAII': 'HI',
+    'IDAHO': 'ID',
+    'ILLINOIS': 'IL',
+    'INDIANA': 'IN',
+    'IOWA': 'IA',
+    'KANSAS': 'KS',
+    'KENTUCKY': 'KY',
+    'LOUISIANA': 'LA',
+    'MAINE': 'ME',
+    'MARYLAND': 'MD',
+    'MASSACHUSETTS': 'MA',
+    'MICHIGAN': 'MI',
+    'MINNESOTA': 'MN',
+    'MISSISSIPPI': 'MS',
+    'MISSOURI': 'MO',
+    'MONTANA': 'MT',
+    'NEBRASKA': 'NE',
+    'NEVADA': 'NV',
+    'NEW HAMPSHIRE': 'NH',
+    'NEW JERSEY': 'NJ',
+    'NEW MEXICO': 'NM',
+    'NEW YORK': 'NY',
+    'NORTH CAROLINA': 'NC',
+    'NORTH DAKOTA': 'ND',
+    'OHIO': 'OH',
+    'OKLAHOMA': 'OK',
+    'OREGON': 'OR',
+    'PENNSYLVANIA': 'PA',
+    'RHODE ISLAND': 'RI',
+    'SOUTH CAROLINA': 'SC',
+    'SOUTH DAKOTA': 'SD',
+    'TENNESSEE': 'TN',
+    'TEXAS': 'TX',
+    'UTAH': 'UT',
+    'VERMONT': 'VT',
+    'VIRGINIA': 'VA',
+    'WASHINGTON': 'WA',
+    'WEST VIRGINIA': 'WV',
+    'WISCONSIN': 'WI',
+    'WYOMING': 'WY',
+    'GUAM': 'GU',
+    'PUERTO RICO': 'PR',
+    'VIRGIN ISLANDS': 'VI'
+}
+
+
+def find_one(lst, targets):
+    for i in range(len(lst)-1, -1, -1):
+        if lst[i] in targets:
+            return i
+    return -1
+
+
+def standardize_job_locations(conn):
+    curs = conn.cursor()
+    curs.execute("SELECT job_id, location FROM " + JOB_TABLE + " WHERE location IS NOT NULL LIMIT 10000")
+
+    state_names = set(STATE__ABBREV.keys())
+    state_abbrevs = set(STATE__ABBREV.values())
+    state_names_abbrevs = state_names.union(state_abbrevs)
+
+    state_twos = set([ tuple(st.split()) for st in state_names if st.find(' ')>=0 ])  # two word states
+    state_twos_first = set([ st[0] for st in state_twos ])  # first word of above
+
+    print state_twos
+    print state_twos_first
+
+
+    curs_up = conn.cursor()
+
+    good_count = 0
+    bad_count = 0
+    for row in curs:
+        job_id, loc_raw = row
+        # most common format: city, state
+        loc_elts = loc_raw.strip().upper().split()
+
+        if loc_elts == []:
+            continue
+
+        # do a little dance to deal with two-word states
+        pos = find_one(loc_elts, state_twos_first)
+        if pos > -1:
+            # print "found state_twos_first {} in ".format(pos), loc_elts
+            if pos+1 <= len(loc_elts)-1:
+                # print "yup"
+                if tuple(loc_elts[pos:pos+2]) in state_twos:
+                    loc_elts = loc_elts[:pos] + [" ".join(loc_elts[pos:pos+2])] + loc_elts[pos+2:]
+                    # print "loc_elts now", loc_elts
+
+        state_pos = find_one(loc_elts, state_names_abbrevs)
+        # if state_pos == -1:
+        #     # last chance for locs like "old hickorytn"
+        #     loc_elts_last = loc_elts[-1]
+        #     for st in state_names_abbrevs:
+        #         if loc_elts_last.endswith(st):
+        #             print loc_elts
+        #             stuff, _ = loc_elts_last.rsplit(st, 1)
+        #             loc_elts = loc_elts[:-1] + [stuff, st]
+        #             state_pos = len(loc_elts) - 1
+        #             break
+
+        if state_pos == -1:
+            print "no state: " + loc_raw
+            bad_count += 1
+            continue
+        state = loc_elts[state_pos]
+        if state in STATE__ABBREV:
+            state = STATE__ABBREV[state]
+        country = " ".join(loc_elts[state_pos+1:])
+        city = " ".join(loc_elts[:state_pos])
+        good_count += 1
+        # print "{} => {}, {}, {}".format(loc_raw, city, state, country)
+
+        curs_up.execute("UPDATE " + JOB_TABLE + " SET city=%s, state=%s WHERE job_id=%s",
+                         (city, state, job_id))
+
+    print "{} good, {} bad ({})".format(good_count, bad_count,
+                                        float(good_count)/(good_count+bad_count))
+
+
+def add_column(conn, tab_name, col_name, col_type):
+    curs = conn.cursor()
+    sql = "ALTER TABLE {} ADD COLUMN {} {}".format(tab_name, col_name, col_type)
+    print sql
+    curs.execute(sql)
+    conn.commit()
+
+
 _connection = None
 _dbhost = None
 def get_connection(u=None):
