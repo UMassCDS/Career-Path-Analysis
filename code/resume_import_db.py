@@ -340,7 +340,7 @@ def find_one(lst, targets):
 
 def standardize_job_locations(conn):
     curs = conn.cursor()
-    curs.execute("SELECT job_id, location FROM " + JOB_TABLE + " WHERE location IS NOT NULL LIMIT 10000")
+    curs.execute("SELECT job_id, location FROM " + JOB_TABLE + " WHERE location IS NOT NULL")
 
     state_names = set(STATE__ABBREV.keys())
     state_abbrevs = set(STATE__ABBREV.values())
