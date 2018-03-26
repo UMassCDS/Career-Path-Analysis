@@ -1,8 +1,8 @@
 import argparse
 import getpass
 import random
-import seaborn as sns
-import matplotlib.pyplot as plt
+# import seaborn as sns
+# import matplotlib.pyplot as plt
 import psycopg2 as db
 
 
