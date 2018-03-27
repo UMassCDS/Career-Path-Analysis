@@ -357,7 +357,7 @@ def standardize_job_locations(conn):
 
     good_count = 0
     bad_count = 0
-    for row in curs:
+    for r, row in enumerate(curs):
         job_id, loc_raw = row
         # most common format: city, state
         loc_elts = loc_raw.strip().upper().split()
@@ -401,6 +401,11 @@ def standardize_job_locations(conn):
 
         curs_up.execute("UPDATE " + JOB_TABLE + " SET city=%s, state=%s WHERE job_id=%s",
                          (city, state, job_id))
+
+        if r % 10000 == 0:
+            print "committing {}".format(r)
+            conn.commit()
+
 
     print "{} good, {} bad ({})".format(good_count, bad_count,
                                         float(good_count)/(good_count+bad_count))
