@@ -492,7 +492,7 @@ def geocode_loc(loc_str_raw, sleep_secs=None):
 
         loc_tup = (city, state, country, location.latitude, location.longitude)
         _gecode_cache[loc_str] = loc_tup
-        logging.debug("geocoded {} => {}".format(loc_str_raw, loc_tup))
+        # logging.debug("geocoded {} => {}".format(loc_str_raw, loc_tup))
         return loc_tup
 
     else:
