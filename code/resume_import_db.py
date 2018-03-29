@@ -2,6 +2,7 @@ import sys
 import re
 import getpass
 import argparse
+import time
 import logging
 import psycopg2 as db
 import resume_import
@@ -11,6 +12,7 @@ import geopy.geocoders
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
+GEOCODE_SLEEP_SECS = 1
 
 # DB_NAME = 'careerpaths'
 
@@ -94,11 +96,7 @@ def parse_all_resumes(conn, infile_names):
         logging.warning("encountered {} errors while loading {} resumes".format(err_count,
                                                                                 resume_count))
 
-    h = _gecode_cache_hits
-    m = _gecode_cache_misses
-    logging.debug("geocode cache {}: {} hits, {} misses ({})".format(h+m, h, m, float(h)/m))
-
-
+    geocode_cache_report()
 
 
 # 		<ResumeID>82408838</ResumeID>
@@ -207,7 +205,7 @@ def parse_resume_db(curs, resume_xml):
                           'description': description
                         }
             if location:
-                geo = geocode_loc(location)
+                geo = geocode_loc(location, GEOCODE_SLEEP_SECS)
                 if geo is not None:
                     city, state, country, lat, long = geo
                     exp_attrs.update({ 'city': city,
@@ -438,7 +436,15 @@ _gecode_cache_hits = 0
 _gecode_cache_misses = 0
 
 
-def geocode_loc(loc_str_raw):
+def geocode_cache_report():
+    h = _gecode_cache_hits
+    m = _gecode_cache_misses
+    logging.debug("geocode cache: {} uses {} hits, {} misses ({})".format(len(_gecode_cache), h, m,
+                                                                          float(h)/m))
+
+
+
+def geocode_loc(loc_str_raw, sleep_secs=None):
     global _geolocator, _gecode_cache, _gecode_cache_hits, _gecode_cache_misses
 
     loc_str = loc_str_raw.strip().lower()
@@ -448,13 +454,13 @@ def geocode_loc(loc_str_raw):
     else:
         _gecode_cache_misses += 1
 
-    h = _gecode_cache_hits
-    m = _gecode_cache_misses
-    if (h+m) % 100 == 0:
-        logging.debug("geocode cache {}: {} hits, {} misses ({})".format(len(_gecode_cache), h, m,
-                                                                         float(h)/m))
+    if (_gecode_cache_hits + _gecode_cache_misses) % 100 == 0:
+        geocode_cache_report()
 
     location = _geolocator.geocode(loc_str)
+    if sleep_secs:
+        time.sleep(sleep_secs)
+
     if location:
         # Nominatim format is ...city, (county,) state, (zip,) country
         addr_elts = location.address.split(',')
@@ -483,6 +489,7 @@ def geocode_loc(loc_str_raw):
 
         loc_tup = (city, state, country, location.latitude, location.longitude)
         _gecode_cache[loc_str] = loc_tup
+        logging.debug("geocoded {} => {}".format(loc_str_raw, loc_tup))
         return loc_tup
 
     else:
