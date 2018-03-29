@@ -78,9 +78,7 @@ EDU_COLS = [
 # https://www.dataquest.io/blog/loading-data-into-postgres/
 
 
-
-
-def parse_all_resumes(conn, infile_names):
+def parse_all_resumes(conn, infile_names, geocode=False):
     curs = conn.cursor()
     resume_count = 0
     err_count = 0
@@ -91,18 +89,15 @@ def parse_all_resumes(conn, infile_names):
             logging.debug("resume xml {}".format(i))
             geocode_cache_report()
 
-        ret = parse_resume_db(curs, resume_xml)
+        ret = parse_resume_db(curs, resume_xml, geocode)
         if ret:
             err_count += 1
         if i % 1000 == 0:
             conn.commit()
 
-
-
     if err_count > 0:
         logging.warning("encountered {} errors while loading {} resumes".format(err_count,
                                                                                 resume_count))
-    geocode_cache_report()
 
 
 # 		<ResumeID>82408838</ResumeID>
@@ -130,7 +125,7 @@ def parse_all_resumes(conn, infile_names):
 # 		<ChannelName>New Monster</ChannelName>
 # 		<WillingnessToTravelInternalName>Up to 25% travel</WillingnessToTravelInternalName>
 # 		<DesiredJobTitle>General Manager</DesiredJobTitle>
-def parse_resume_db(curs, resume_xml):
+def parse_resume_db(curs, resume_xml, geocode=True):
     attrs = {}
 
     # First, grab all the resume fields
@@ -210,7 +205,7 @@ def parse_resume_db(curs, resume_xml):
                           'title': title,
                           'description': description
                         }
-            if location:
+            if geocode and location:
                 geo = geocode_loc(location, GEOCODE_SLEEP_SECS)
                 if geo is not None:
                     city, state, country, lat, long = geo
@@ -251,9 +246,6 @@ def parse_resume_db(curs, resume_xml):
             edu_attrs['summary'] = schoolrecord.findtext('EducationSummary')
             edu_attrs['gpa'] = schoolrecord.findtext('GPA')
             insert_row(curs, EDU_TABLE, edu_attrs)
-
-    #         school = unidecode.unidecode("EDU " + school_id + " " + school_name)
-    #         stints.append((None, grad_date, school))
 
     return 0
 
@@ -610,6 +602,7 @@ if __name__ == '__main__':
     parser.add_argument('--host', default='localhost')
     parser.add_argument('--user', default=None)
     parser.add_argument('--db', default=None)
+    parser.add_argument('--geocode', action='store_true')
     parser.add_argument('infile_names', nargs='+')
     args = parser.parse_args()
 
@@ -626,7 +619,7 @@ if __name__ == '__main__':
 
     logging.info("loading infiles")
     # resume_import.xml2resumes(args.infile_names, parse_resume_db)
-    parse_all_resumes(conn, args.infile_names)
+    parse_all_resumes(conn, args.infile_names, args.geocode)
 
     # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
