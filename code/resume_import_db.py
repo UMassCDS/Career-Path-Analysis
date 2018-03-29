@@ -11,8 +11,7 @@ import resume_common
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
-DB_NAME = 'careerpaths'
-# DB_USER = None
+# DB_NAME = 'careerpaths'
 
 RESUME_TABLE = 'resumes'
 RESUME_COLS = [
@@ -73,16 +72,17 @@ EDU_COLS = [
 
 
 
-def parse_all_resumes(infile_names):
+def parse_all_resumes(conn, infile_names):
+    curs = conn.cursor()
     resume_count = 0
     err_count = 0
     for i, resume_xml in enumerate(resume_import.get_resume_xmls(infile_names)):
         resume_count += 1
-        ret = parse_resume_db(resume_xml)
+        ret = parse_resume_db(curs, resume_xml)
         if ret:
             err_count += 1
         if i % 1000 == 0:
-            commit()
+            conn.commit()
 
     if err_count > 0:
         logging.warning("encountered {} errors while loading {} resumes".format(err_count,
@@ -114,7 +114,7 @@ def parse_all_resumes(infile_names):
 # 		<ChannelName>New Monster</ChannelName>
 # 		<WillingnessToTravelInternalName>Up to 25% travel</WillingnessToTravelInternalName>
 # 		<DesiredJobTitle>General Manager</DesiredJobTitle>
-def parse_resume_db(resume_xml):
+def parse_resume_db(curs, resume_xml):
     attrs = {}
 
     # First, grab all the resume fields
@@ -163,7 +163,7 @@ def parse_resume_db(resume_xml):
     #   'ChannelName'
 
     try:
-        insert_row(RESUME_TABLE, attrs)
+        insert_row(curs, RESUME_TABLE, attrs)
     except Exception as err:
         logging.warning("error inserting row: {}".format(err))
 
@@ -193,7 +193,7 @@ def parse_resume_db(resume_xml):
                           'location': location,
                           'title': title,
                           'description': description }
-            insert_row(JOB_TABLE, exp_attrs)
+            insert_row(curs, JOB_TABLE, exp_attrs)
             # experiences.append(exp_attrs)
 
 
@@ -222,7 +222,7 @@ def parse_resume_db(resume_xml):
             edu_attrs['state'] = resume_import.clean_name(schoolrecord.findtext('State'))
             edu_attrs['summary'] = schoolrecord.findtext('EducationSummary')
             edu_attrs['gpa'] = schoolrecord.findtext('GPA')
-            insert_row(EDU_TABLE, edu_attrs)
+            insert_row(curs, EDU_TABLE, edu_attrs)
 
     #         school = unidecode.unidecode("EDU " + school_id + " " + school_name)
     #         stints.append((None, grad_date, school))
@@ -352,7 +352,6 @@ def standardize_job_locations(conn):
     print state_twos
     print state_twos_first
 
-
     curs_up = conn.cursor()
 
     good_count = 0
@@ -401,11 +400,9 @@ def standardize_job_locations(conn):
 
         curs_up.execute("UPDATE " + JOB_TABLE + " SET city=%s, state=%s WHERE job_id=%s",
                          (city, state, job_id))
-
         if r % 10000 == 0:
             print "committing {}".format(r)
             conn.commit()
-
 
     print "{} good, {} bad ({})".format(good_count, bad_count,
                                         float(good_count)/(good_count+bad_count))
@@ -419,31 +416,36 @@ def add_column(conn, tab_name, col_name, col_type):
     conn.commit()
 
 
-_connection = None
-_dbhost = None
-def get_connection(u=None):
-    global _connection
-    global _dbhost
-
-    if not _connection:
+def get_connection(host, dbname, user=None):
+    if user is None:
         user = raw_input("db username: ")
-        passw = getpass.getpass("db password: ")
-        connstr = "host='{}' dbname={} user={} password='{}'".format(_dbhost, DB_NAME, user, passw)
-        _connection = db.connect(connstr)
-    return _connection
+    passw = getpass.getpass("db password: ")
+    connstr = "host='{}' dbname={} user={} password='{}'".format(host, dbname, user, passw)
+    return  db.connect(connstr)
+# _connection = None
+# _dbhost = None
+# def get_connection(u=None):
+#     global _connection
+#     global _dbhost
+#
+#     if not _connection:
+#         user = raw_input("db username: ")
+#         passw = getpass.getpass("db password: ")
+#         connstr = "host='{}' dbname={} user={} password='{}'".format(_dbhost, DB_NAME, user, passw)
+#         _connection = db.connect(connstr)
+#     return _connection
+#
+#
+# _cursor = None
+# def get_cursor():
+#     global _cursor
+#     if not _cursor:
+#         _cursor = get_connection().cursor()
+#     return _cursor
 
 
-_cursor = None
-def get_cursor():
-    global _cursor
-    if not _cursor:
-        _cursor = get_connection().cursor()
-    return _cursor
-
-
-def create_all_tables(overwrite=False):
-    curs = get_cursor()
-
+def create_all_tables(conn, overwrite=False):
+    curs = conn.cursor()
     if overwrite:
         drop_table(curs, RESUME_TABLE)
         drop_table(curs, JOB_TABLE)
@@ -453,7 +455,7 @@ def create_all_tables(overwrite=False):
     create_table(curs, EDU_TABLE, EDU_COLS)
 
 
-def create_table(curs, table_name, col_tups, key_idx=None):
+def create_table(curs, table_name, col_tups):
     sql = "CREATE TABLE " + table_name + " ("
     sql += ", ".join([nam + " " + typ for nam, typ in col_tups])
     sql += ")"
@@ -465,7 +467,7 @@ def drop_table(curs, table_name):
     curs.execute(sql)
 
 
-def insert_row(table_name, col__val):
+def insert_row(curs, table_name, col__val):
     col_val_tups = col__val.items()
     cols = [ t[0] for t in col_val_tups ]
     vals = [ t[1] for t in col_val_tups ]
@@ -475,14 +477,14 @@ def insert_row(table_name, col__val):
     sql += ", ".join(["%s"]*len(vals))
     sql += ")"
     try:
-        get_cursor().execute(sql, vals)
+        curs.execute(sql, vals)
     except Exception as err:
         logging.warning("error inserting record: {} {}".format(sql, vals))
         raise err
 
 
-def commit():
-    get_connection().commit()
+# def commit():
+#     get_connection().commit()
 
 
 def boolnone(txt):
@@ -511,25 +513,29 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Import resume data into relational db')
     parser.add_argument('--host', default='localhost')
-    # parser.add_argument('--user', default=None)
+    parser.add_argument('--user', default=None)
+    parser.add_argument('--db', default=None)
     parser.add_argument('infile_names', nargs='+')
     args = parser.parse_args()
 
-    _dbhost = args.host
+    # _dbhost = args.host
 
     logging.debug("got {} input files: \n\t{}".format(len(args.infile_names),
                                                       "\n\t".join(args.infile_names)))
 
+    logging.info("connecting to db")
+    conn = get_connection(args.host, args.db, args.users)
+
     logging.info("creating tables")
-    create_all_tables(overwrite=True)
+    create_all_tables(conn, overwrite=True)
 
     logging.info("loading infiles")
     # resume_import.xml2resumes(args.infile_names, parse_resume_db)
-    parse_all_resumes(args.infile_names)
+    parse_all_resumes(conn, args.infile_names)
 
     # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
-    commit()
+    conn.commit()
 
 
 
@@ -544,20 +550,5 @@ if __name__ == '__main__':
     # # with open(out, 'wb') as outp:
     # #     pickle.dump(resumes_clean, outp)
     # dump_json_resumes(resumes_clean, out)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

@@ -1,17 +1,8 @@
 import argparse
-import getpass
 import random
 # import seaborn as sns
 # import matplotlib.pyplot as plt
-import psycopg2 as db
-
-
-def get_connection(host, dbname, user=None):
-    if user is None:
-        user = raw_input("db username: ")
-    passw = getpass.getpass("db password: ")
-    connstr = "host='{}' dbname={} user={} password='{}'".format(host, dbname, user, passw)
-    return  db.connect(connstr)
+from code.resume_import_db import get_connection
 
 
 def plot_distrib(conn, table_name, attr_name, num_samples=None, xlim=None, ylim=None, bw='scott'):
