@@ -209,13 +209,7 @@ def parse_resume_db(curs, resume_xml, geocode=True):
             if geocode and location:
                 geo = geocode_loc(location, GEOCODE_SLEEP_SECS)
                 if geo is not None:
-                    city, state, country, lat, long = geo
-                    exp_attrs.update({ 'city': city,
-                                       'state': state,
-                                       'country': country,
-                                       'latitude': lat,
-                                       'longitude': long
-                                     })
+                    exp_attrs.update(geo)
 
             insert_row(curs, JOB_TABLE, exp_attrs)
             # experiences.append(exp_attrs)
@@ -443,7 +437,7 @@ def geocode_cache_report():
             len(_gecode_cache), h+m, h, m, perc))
 
 
-def geocode_loc(loc_str_raw, sleep_secs=None):
+def geocode_loc(loc_str_raw, sleep_secs):
     global _geolocator, _gecode_cache, _gecode_cache_hits, _gecode_cache_misses
 
     loc_str = loc_str_raw.strip().lower()
@@ -486,14 +480,58 @@ def geocode_loc(loc_str_raw, sleep_secs=None):
             city = None
             state = None
 
-        loc_tup = (city, state, country, location.latitude, location.longitude)
-        _gecode_cache[loc_str] = loc_tup
+        loc_dict = {'city': city, 'state': state, 'country': country,
+                    'latitude':location.latitude, 'longitude': location.longitude}
+        _gecode_cache[loc_str] = loc_dict
         # logging.debug("geocoded {} => {}".format(loc_str_raw, loc_tup))
-        return loc_tup
+        return loc_dict
 
     else:
         _gecode_cache[loc_str] = None
         return None
+
+
+def geocode_blank_locs(conn, chunk_size=None):
+    global _gecode_cache
+    curs = conn.cursor()
+
+    # get the id of the last record we successfully geocoded
+    curs.execute("SELECT max(job_id) FROM jobs WHERE country IS NOT NULL")
+    last_id = curs.fetchone()[0]
+    logging.debug("last known geocoded job_id: {}".format(last_id))
+
+    # now update the cache with the ones that we got already
+    logging.debug("updating geocode cache")
+    sql = "SELECT DISTINCT location, city, state, country, latitude, longitude "
+    sql += "FROM " + JOB_TABLE + " "
+    sql += "WHERE job_id <= %s"
+    curs.execute(sql, (last_id,))
+    for rec in curs:
+        loc_str_raw, city, state, country, latitude, longitude = rec
+        # n.b.: make sure this matches cacheing above
+        loc_str = loc_str_raw.strip().lower()
+        loc_tup = (city, state, country, latitude, longitude)
+        _gecode_cache[loc_str] = loc_tup
+    logging.debug("cached {} locations".format(len(_gecode_cache)))
+
+    # grab the records to be updated
+    logging.debug("selecting records to geocode")
+    sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s"
+    if chunk_size:
+        sql += " LIMIT {}" + str(chunk_size)
+    curs.execute(sql, (last_id,))
+
+    logging.debug("updating records")
+    curs_up = conn.cursor()
+    for r, rec in enumerate(curs):
+        job_id, loc_str = rec
+        geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
+        if geo:
+            update_row(curs_up, JOB_TABLE, {'job_id': job_id}, geo)
+        if r % 100 == 0:
+            logging.debug("geocoded {} records".format(r))
+            geocode_cache_report()
+            conn.commit()
 
 
 def add_column(conn, tab_name, col_name, col_type):
@@ -568,6 +606,19 @@ def insert_row(curs, table_name, col__val):
         curs.execute(sql, vals)
     except Exception as err:
         logging.warning("error inserting record: {} {}".format(sql, vals))
+        raise err
+
+
+def update_row(curs, table_name, where_dict, update_dict):
+    where_names, where_vals = zip(*where_dict.items())
+    up_names, up_vals = zip(*update_dict.items())
+    sql = "UPDATE " + table_name
+    sql += " SET " + ", ".join([u + "=%s" for u in up_names])
+    sql += " WHERE " + " AND ".join([w + "=%s" for w in where_names])
+    try:
+        curs.execute(sql, up_vals + where_vals)
+    except Exception as err:
+        logging.warning("error updating record: {} {}".format(sql, up_vals + where_vals))
         raise err
 
 
