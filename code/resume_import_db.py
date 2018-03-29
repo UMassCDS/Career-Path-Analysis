@@ -94,6 +94,12 @@ def parse_all_resumes(conn, infile_names):
         logging.warning("encountered {} errors while loading {} resumes".format(err_count,
                                                                                 resume_count))
 
+    h = _gecode_cache_hits
+    m = _gecode_cache_misses
+    logging.debug("geocode cache {}: {} hits, {} misses ({})".format(h+m, h, m, float(h)/m))
+
+
+
 
 # 		<ResumeID>82408838</ResumeID>
 # 		<WantsPermanent>True</WantsPermanent>
@@ -443,7 +449,7 @@ def geocode_loc(loc_str_raw):
 
     h = _gecode_cache_hits
     m = _gecode_cache_misses
-    if (h+m) % 10000 == 0:
+    if (h+m) % 1000 == 0:
         logging.debug("geocode cache {}: {} hits, {} misses ({})".format(h+m, h, m, float(h)/m))
 
     location = _geolocator.geocode(loc_str)
@@ -581,7 +587,7 @@ if __name__ == '__main__':
                                                       "\n\t".join(args.infile_names)))
 
     logging.info("connecting to db")
-    conn = get_connection(args.host, args.db, args.users)
+    conn = get_connection(args.host, args.db, args.user)
 
     logging.info("creating tables")
     create_all_tables(conn, overwrite=True)
