@@ -198,24 +198,25 @@ def parse_resume_db(curs, resume_xml):
             stints.append((start, end, company_name, location, title, desc))
 
         for start, end, company_name, location, title, description in sort_stints(stints):
-            geo = geocode_loc(location)
-            if geo is not None:
-                city, state, country, lat, long = geo
-            else:
-                city, state, country, lat, long = (None, None, None, None, None)  # this is ugly
             exp_attrs = { 'resume_id': resume_id,
                           'start_dt': start,
                           'end_dt': end,
                           'company_name': company_name,
                           'location': location,
                           'title': title,
-                          'description': description,
-                          'city': city,
-                          'state': state,
-                          'country': country,
-                          'latitude': lat,
-                          'longitude': long
+                          'description': description
                         }
+            if location:
+                geo = geocode_loc(location)
+                if geo is not None:
+                    city, state, country, lat, long = geo
+                    exp_attrs.update({ 'city': city,
+                                       'state': state,
+                                       'country': country,
+                                       'latitude': lat,
+                                       'longitude': long
+                                     })
+
             insert_row(curs, JOB_TABLE, exp_attrs)
             # experiences.append(exp_attrs)
 
@@ -456,7 +457,6 @@ def geocode_loc(loc_str_raw):
     if location:
         # Nominatim format is ...city, (county,) state, (zip,) country
         addr_elts = location.address.split(',')
-        country = addr_elts[-1]
 
         # if there's a zip it'll be second to last
         if addr_elts[-2].isnumeric():
@@ -472,6 +472,11 @@ def geocode_loc(loc_str_raw):
             state = None
         elif num_elts == 1:
             country = addr_elts[0]
+            city = None
+            state = None
+        else:
+            logging.debug("empty geoloc address: " + location.address)
+            country = None
             city = None
             state = None
 
