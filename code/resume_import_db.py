@@ -85,9 +85,10 @@ def parse_all_resumes(conn, infile_names, geocode=False):
     for i, resume_xml in enumerate(resume_import.get_resume_xmls(infile_names)):
         resume_count += 1
 
-        if i % 10 == 0:
+        if i % 1000 == 0:
             logging.debug("resume xml {}".format(i))
-            geocode_cache_report()
+            if geocode:
+                geocode_cache_report()
 
         ret = parse_resume_db(curs, resume_xml, geocode)
         if ret:
