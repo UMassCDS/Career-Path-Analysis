@@ -457,14 +457,18 @@ def geocode_loc(loc_str_raw):
         return None
 
     # format is ...city, county, state, (zip,) country
-    addr_elts = location.address.split(',')
-    country = addr_elts[-1]
-    if addr_elts[-2].isnumeric():  # this addr includes a zip
-        state = addr_elts[-3]
-        city = addr_elts[-5]
-    else:
-        state = addr_elts[-2]
-        city = addr_elts[-4]
+    try:
+        addr_elts = location.address.split(',')
+        country = addr_elts[-1]
+        if addr_elts[-2].isnumeric():  # this addr includes a zip
+            state = addr_elts[-3]
+            city = addr_elts[-5]
+        else:
+            state = addr_elts[-2]
+            city = addr_elts[-4]
+    except IndexError:
+        logging.debug("unparseable location: '{}'")
+        return None
 
     ret = (city, state, country, location.latitude, location.longitude)
     _gecode_cache[loc_str] = ret
