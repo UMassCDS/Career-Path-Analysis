@@ -445,8 +445,9 @@ _gecode_cache_misses = 0
 def geocode_cache_report():
     h = _gecode_cache_hits
     m = _gecode_cache_misses
+    perc = float(h)/(h+m) if (h+m) > 0 else 0
     logging.debug("geocode cache: {} uses, {} hits, {} misses ({})".format(len(_gecode_cache), h, m,
-                                                                          float(h)/(h+m)))
+                                                                          perc))
 
 
 def geocode_loc(loc_str_raw, sleep_secs=None):
