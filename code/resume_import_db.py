@@ -86,14 +86,17 @@ def parse_all_resumes(conn, infile_names):
     err_count = 0
     for i, resume_xml in enumerate(resume_import.get_resume_xmls(infile_names)):
         resume_count += 1
+
+        if i % 100 == 0:
+            logging.debug("resume xml {}".format(i))
+            geocode_cache_report()
+
         ret = parse_resume_db(curs, resume_xml)
         if ret:
             err_count += 1
         if i % 1000 == 0:
             conn.commit()
 
-        if i % 100 == 0:
-            geocode_cache_report()
 
 
     if err_count > 0:
@@ -442,9 +445,8 @@ _gecode_cache_misses = 0
 def geocode_cache_report():
     h = _gecode_cache_hits
     m = _gecode_cache_misses
-    logging.debug("geocode cache: {} uses {} hits, {} misses ({})".format(len(_gecode_cache), h, m,
-                                                                          float(h)/m))
-
+    logging.debug("geocode cache: {} uses, {} hits, {} misses ({})".format(len(_gecode_cache), h, m,
+                                                                          float(h)/(h+m)))
 
 
 def geocode_loc(loc_str_raw, sleep_secs=None):
