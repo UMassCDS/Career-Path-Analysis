@@ -6,6 +6,7 @@ import logging
 import psycopg2 as db
 import resume_import
 import resume_common
+import geopy.geocoders
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
@@ -50,7 +51,12 @@ JOB_COLS = [
     ('company_name', 'VARCHAR(256)'),
     ('location', 'VARCHAR(256)'),
     ('title', 'VARCHAR(256)'),
-    ('description', 'TEXT')
+    ('description', 'TEXT'),
+    ('city', 'VARCHAR(192)'),
+    ('state', 'VARCHAR(64)'),
+    ('country', 'VARCHAR(64)'),
+    ('latitude', 'FLOAT'),
+    ('longitude', 'FLOAT')
 ]
 
 EDU_TABLE = 'schools'
@@ -186,13 +192,24 @@ def parse_resume_db(curs, resume_xml):
             stints.append((start, end, company_name, location, title, desc))
 
         for start, end, company_name, location, title, description in sort_stints(stints):
+            geo = geocode_loc(location)
+            if geo is not None:
+                city, state, country, lat, long = geo
+            else:
+                city, state, country, lat, long = (None, None, None, None, None)  # this is ugly
             exp_attrs = { 'resume_id': resume_id,
                           'start_dt': start,
                           'end_dt': end,
                           'company_name': company_name,
                           'location': location,
                           'title': title,
-                          'description': description }
+                          'description': description,
+                          'city': city,
+                          'state': state,
+                          'country': country,
+                          'latitude': lat,
+                          'longitude': long
+                        }
             insert_row(curs, JOB_TABLE, exp_attrs)
             # experiences.append(exp_attrs)
 
@@ -406,6 +423,46 @@ def standardize_job_locations(conn):
 
     print "{} good, {} bad ({})".format(good_count, bad_count,
                                         float(good_count)/(good_count+bad_count))
+
+
+_geolocator = geopy.geocoders.Nominatim()
+_gecode_cache = {}
+_gecode_cache_hits = 0
+_gecode_cache_misses = 0
+
+
+def geocode_loc(loc_str_raw):
+    global _geolocator, _gecode_cache, _gecode_cache_hits, _gecode_cache_misses
+
+    loc_str = loc_str_raw.strip().lower()
+    if loc_str in _gecode_cache:
+        _gecode_cache_hits += 1
+        return _gecode_cache[loc_str]
+    else:
+        _gecode_cache_misses += 1
+
+    h = _gecode_cache_hits
+    m = _gecode_cache_misses
+    if (h+m) % 10000 == 0:
+        logging.debug("geocode cache {}: {} hits, {} misses ({})".format(h+m, h, m, float(h)/m))
+
+    location = _geolocator.geocode(loc_str)
+    if not location:
+        return None
+
+    # format is ...city, county, state, (zip,) country
+    addr_elts = location.address.split(',')
+    country = addr_elts[-1]
+    if addr_elts[-2].isnumeric():  # this addr includes a zip
+        state = addr_elts[-3]
+        city = addr_elts[-5]
+    else:
+        state = addr_elts[-2]
+        city = addr_elts[-4]
+
+    ret = (city, state, country, location.latitude, location.longitude)
+    _gecode_cache[loc_str] = ret
+    return ret
 
 
 def add_column(conn, tab_name, col_name, col_type):
