@@ -449,30 +449,38 @@ def geocode_loc(loc_str_raw):
 
     h = _gecode_cache_hits
     m = _gecode_cache_misses
-    if (h+m) % 1000 == 0:
+    if (h+m) % 100 == 0:
         logging.debug("geocode cache {}: {} hits, {} misses ({})".format(h+m, h, m, float(h)/m))
 
     location = _geolocator.geocode(loc_str)
-    if not location:
-        return None
-
-    # format is ...city, county, state, (zip,) country
-    try:
+    if location:
+        # Nominatim format is ...city, (county,) state, (zip,) country
         addr_elts = location.address.split(',')
         country = addr_elts[-1]
-        if addr_elts[-2].isnumeric():  # this addr includes a zip
-            state = addr_elts[-3]
-            city = addr_elts[-5]
-        else:
-            state = addr_elts[-2]
-            city = addr_elts[-4]
-    except IndexError:
-        logging.debug("unparseable location.address: '{}'".format(location.address))
-        return None
 
-    ret = (city, state, country, location.latitude, location.longitude)
-    _gecode_cache[loc_str] = ret
-    return ret
+        # if there's a zip it'll be second to last
+        if addr_elts[-2].isnumeric():
+            zip = addr_elts.pop(-2)
+
+        num_elts = len(addr_elts)
+        if num_elts > 3:  # got a county and city
+            city, county, state, country = addr_elts[-4:]
+        elif num_elts == 3:
+            city, state, country = addr_elts[-3:]
+        elif num_elts == 2:
+            city, country = addr_elts[-2:]
+            state = None
+        elif num_elts == 1:
+            country = addr_elts[0]
+            city = None
+            state = None
+
+        loc_tup = (city, state, country, location.latitude, location.longitude)
+        _gecode_cache[loc_str] = loc_tup
+        return loc_tup
+
+    else:
+        return None
 
 
 def add_column(conn, tab_name, col_name, col_type):
