@@ -467,7 +467,7 @@ def geocode_loc(loc_str_raw):
             state = addr_elts[-2]
             city = addr_elts[-4]
     except IndexError:
-        logging.debug("unparseable location: '{}'")
+        logging.debug("unparseable location.address: '{}'".format(location.address))
         return None
 
     ret = (city, state, country, location.latitude, location.longitude)
