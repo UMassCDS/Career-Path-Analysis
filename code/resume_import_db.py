@@ -92,10 +92,13 @@ def parse_all_resumes(conn, infile_names):
         if i % 1000 == 0:
             conn.commit()
 
+        if i % 100 == 0:
+            geocode_cache_report()
+
+
     if err_count > 0:
         logging.warning("encountered {} errors while loading {} resumes".format(err_count,
                                                                                 resume_count))
-
     geocode_cache_report()
 
 
@@ -454,8 +457,8 @@ def geocode_loc(loc_str_raw, sleep_secs=None):
     else:
         _gecode_cache_misses += 1
 
-    if (_gecode_cache_hits + _gecode_cache_misses) % 100 == 0:
-        geocode_cache_report()
+    # if (_gecode_cache_hits + _gecode_cache_misses) % 100 == 0:
+    #     geocode_cache_report()
 
     location = _geolocator.geocode(loc_str)
     if sleep_secs:
