@@ -451,7 +451,8 @@ def geocode_loc(loc_str_raw):
     h = _gecode_cache_hits
     m = _gecode_cache_misses
     if (h+m) % 100 == 0:
-        logging.debug("geocode cache {}: {} hits, {} misses ({})".format(h+m, h, m, float(h)/m))
+        logging.debug("geocode cache {}: {} hits, {} misses ({})".format(len(_gecode_cache), h, m,
+                                                                         float(h)/m))
 
     location = _geolocator.geocode(loc_str)
     if location:
@@ -459,7 +460,7 @@ def geocode_loc(loc_str_raw):
         addr_elts = location.address.split(',')
 
         # if there's a zip it'll be second to last
-        if addr_elts[-2].isnumeric():
+        if (len(addr_elts) >= 2) and addr_elts[-2].isnumeric():
             zip = addr_elts.pop(-2)
 
         num_elts = len(addr_elts)
