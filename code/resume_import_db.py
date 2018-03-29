@@ -87,7 +87,7 @@ def parse_all_resumes(conn, infile_names):
     for i, resume_xml in enumerate(resume_import.get_resume_xmls(infile_names)):
         resume_count += 1
 
-        if i % 1 == 0:
+        if i % 10 == 0:
             logging.debug("resume xml {}".format(i))
             geocode_cache_report()
 
@@ -446,8 +446,8 @@ def geocode_cache_report():
     h = _gecode_cache_hits
     m = _gecode_cache_misses
     perc = float(h)/(h+m) if (h+m) > 0 else 0
-    logging.debug("geocode cache: {} uses, {} hits, {} misses ({})".format(len(_gecode_cache), h, m,
-                                                                          perc))
+    logging.debug("geocode cache: {} entries, {} calls ({} hits, {} misses, {})".format(
+            len(_gecode_cache), h+m, h, m, perc))
 
 
 def geocode_loc(loc_str_raw, sleep_secs=None):
@@ -499,6 +499,7 @@ def geocode_loc(loc_str_raw, sleep_secs=None):
         return loc_tup
 
     else:
+        _gecode_cache[loc_str] = None
         return None
 
 
