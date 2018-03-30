@@ -657,12 +657,12 @@ def update_row(curs, table_name, where_dict, update_dict):
     sql = "UPDATE " + table_name
     sql += " SET " + ", ".join([u + "=%s" for u in up_names])
     sql += " WHERE " + " AND ".join([w + "=%s" for w in where_names])
-    logging.debug(sql % (up_vals + where_vals))
+    # logging.debug(sql % (up_vals + where_vals))
     try:
         curs.execute(sql, up_vals + where_vals)
     except Exception as err:
         logging.warning("error updating record: {} {}".format(sql, up_vals + where_vals))
-        raise err
+        # raise err
 
 
 # def commit():
