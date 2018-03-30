@@ -8,12 +8,13 @@ import psycopg2 as db
 import resume_import
 import resume_common
 import geopy.geocoders
+import geopy.exc
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 GEOCODE_SLEEP_SECS = 1
-
+GEOCODE_ATTEMPTS = 5
 # DB_NAME = 'careerpaths'
 
 RESUME_TABLE = 'resumes'
@@ -424,38 +425,49 @@ def standardize_job_locations(conn):
 
 
 _geolocator = geopy.geocoders.Nominatim()
-_gecode_cache = {}
-_gecode_cache_hits = 0
-_gecode_cache_misses = 0
+_geocode_cache = {}
+_geocode_cache_hits = 0
+_geocode_cache_misses = 0
 
 
 def geocode_cache_report():
-    h = _gecode_cache_hits
-    m = _gecode_cache_misses
+    h = _geocode_cache_hits
+    m = _geocode_cache_misses
     perc = float(h)/(h+m) if (h+m) > 0 else 0
     logging.debug("geocode cache: {} entries, {} calls ({} hits, {} misses, {})".format(
-            len(_gecode_cache), h+m, h, m, perc))
+            len(_geocode_cache), h + m, h, m, perc))
 
 
 def geocode_loc(loc_str_raw, sleep_secs):
-    global _geolocator, _gecode_cache, _gecode_cache_hits, _gecode_cache_misses
+    global _geolocator, _geocode_cache, _geocode_cache_hits, _geocode_cache_misses
 
     loc_str = loc_str_raw.strip().lower()
     if loc_str.endswith(' ca'):  # dirty hack to deal with a common geocoding error
         loc_str = loc_str.rsplit(' ca', 1)[0] + ' california'
 
-    if loc_str in _gecode_cache:
-        _gecode_cache_hits += 1
-        return _gecode_cache[loc_str]
+    if loc_str in _geocode_cache:
+        _geocode_cache_hits += 1
+        return _geocode_cache[loc_str]
     else:
-        _gecode_cache_misses += 1
+        _geocode_cache_misses += 1
 
     # if (_gecode_cache_hits + _gecode_cache_misses) % 100 == 0:
     #     geocode_cache_report()
 
-    location = _geolocator.geocode(loc_str, exactly_one=True)
-    if sleep_secs:
-        time.sleep(sleep_secs)
+    for attempt in range(GEOCODE_ATTEMPTS):
+        try:
+            location = _geolocator.geocode(loc_str, exactly_one=True)
+            if sleep_secs:
+                time.sleep(sleep_secs)
+            break
+        except geopy.exc.GeocoderTimedOut as err:
+            logging.debug("geocode failure {}".format(attempt))
+            time.sleep(10)
+            if attempt < (GEOCODE_ATTEMPTS-1):
+                continue
+            else:
+                raise err
+
 
     if location:
         # location = get_best_geo(locations)
@@ -489,12 +501,12 @@ def geocode_loc(loc_str_raw, sleep_secs):
 
         loc_dict = {'city': city, 'state': state, 'country': country,
                     'latitude':location.latitude, 'longitude': location.longitude}
-        _gecode_cache[loc_str] = loc_dict
+        _geocode_cache[loc_str] = loc_dict
         # logging.debug("geocoded {} => {}".format(loc_str_raw, loc_tup))
         return loc_dict
 
     else:
-        _gecode_cache[loc_str] = None
+        _geocode_cache[loc_str] = None
         return None
 
 
@@ -515,7 +527,7 @@ def geocode_loc(loc_str_raw, sleep_secs):
 
 
 def geocode_blank_locs(conn, chunk_size=None):
-    global _gecode_cache
+    global _geocode_cache
     curs = conn.cursor()
 
     # get the id of the last record we successfully geocoded
@@ -537,8 +549,8 @@ def geocode_blank_locs(conn, chunk_size=None):
         loc_str = loc_str_raw.strip().lower()
         loc_dict = {'city': city, 'state': state, 'country': country,
                     'latitude': latitude, 'longitude': longitude}
-        _gecode_cache[loc_str] = loc_dict
-    logging.debug("cached {} locations from {} rows".format(len(_gecode_cache), curs.rowcount))
+        _geocode_cache[loc_str] = loc_dict
+    logging.debug("cached {} locations from {} rows".format(len(_geocode_cache), curs.rowcount))
 
     # grab the records to be updated
     logging.debug("selecting records to geocode")
