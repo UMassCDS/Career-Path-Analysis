@@ -467,7 +467,6 @@ def geocode_loc(loc_str_raw, sleep_secs):
     else:
         raise Exception("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
 
-
     if location:
         # location = get_best_geo(locations)
 
@@ -660,7 +659,7 @@ def update_row(curs, table_name, where_dict, update_dict):
     try:
         curs.execute(sql, up_vals + where_vals)
     except Exception as err:
-        logging.warning("error updating record: {} {}".format(sql, up_vals + where_vals))
+        logging.warning("error updating record: '{} {}', {}".format(sql, up_vals + where_vals, err))
         # raise err
 
 
