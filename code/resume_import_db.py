@@ -477,7 +477,7 @@ def geocode_loc(loc_str_raw, sleep_secs):
 
         # if there's a zip it'll be second to last
         if (len(addr_elts) >= 2) and addr_elts[-2].isnumeric():
-            logging.debug(addr_elts)
+            # logging.debug(addr_elts)
             zip = addr_elts.pop(-2)
 
 
