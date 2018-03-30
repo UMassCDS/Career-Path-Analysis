@@ -441,6 +441,9 @@ def geocode_loc(loc_str_raw, sleep_secs):
     global _geolocator, _gecode_cache, _gecode_cache_hits, _gecode_cache_misses
 
     loc_str = loc_str_raw.strip().lower()
+    if loc_str.endswith(' ca'):  # dirty hack to deal with a common geocoding error
+        loc_str = loc_str.rsplit(' ca', 1)[0] + ' california'
+
     if loc_str in _gecode_cache:
         _gecode_cache_hits += 1
         return _gecode_cache[loc_str]
@@ -450,17 +453,21 @@ def geocode_loc(loc_str_raw, sleep_secs):
     # if (_gecode_cache_hits + _gecode_cache_misses) % 100 == 0:
     #     geocode_cache_report()
 
-    location = _geolocator.geocode(loc_str)
+    location = _geolocator.geocode(loc_str, exactly_one=True)
     if sleep_secs:
         time.sleep(sleep_secs)
 
     if location:
+        # location = get_best_geo(locations)
+
         # Nominatim format is ...city, (county,) state, (zip,) country
-        addr_elts = location.address.split(',')
+        addr_elts = location.address.split(', ')
 
         # if there's a zip it'll be second to last
         if (len(addr_elts) >= 2) and addr_elts[-2].isnumeric():
+            logging.debug(addr_elts)
             zip = addr_elts.pop(-2)
+
 
         num_elts = len(addr_elts)
         if num_elts > 3:  # got a county and city
@@ -491,47 +498,70 @@ def geocode_loc(loc_str_raw, sleep_secs):
         return None
 
 
+# # Right now, just pick the first one that's in the USA (this method is essentially here to stop
+# # 'ca' from getting turned into 'Candada' instead of 'California'
+# def get_best_geo(locations):
+#     if len(locations) == 1:
+#         return locations[0]
+#     else:
+#         logging.debug("got {} locs: {}".format(len(locations), [loc.address for loc in locations]))
+#
+#     priority_rank = {
+#         'United States of America': 0,
+#         'Canada': 1
+#     }
+#     locations.sort(key=lambda loc: priority_rank.get(loc.address.rsplit(', ', 1)[-1], sys.maxint))
+#     return locations[0]
+
+
 def geocode_blank_locs(conn, chunk_size=None):
     global _gecode_cache
     curs = conn.cursor()
 
     # get the id of the last record we successfully geocoded
-    curs.execute("SELECT max(job_id) FROM jobs WHERE country IS NOT NULL")
+    curs.execute("SELECT max(job_id) FROM " + JOB_TABLE + " WHERE country IS NOT NULL")
     last_id = curs.fetchone()[0]
     logging.debug("last known geocoded job_id: {}".format(last_id))
+    if last_id is None:
+        last_id = -1
 
     # now update the cache with the ones that we got already
     logging.debug("updating geocode cache")
     sql = "SELECT DISTINCT location, city, state, country, latitude, longitude "
     sql += "FROM " + JOB_TABLE + " "
-    sql += "WHERE job_id <= %s"
+    sql += "WHERE job_id <= %s AND location IS NOT NULL"
     curs.execute(sql, (last_id,))
     for rec in curs:
         loc_str_raw, city, state, country, latitude, longitude = rec
         # n.b.: make sure this matches cacheing above
         loc_str = loc_str_raw.strip().lower()
-        loc_tup = (city, state, country, latitude, longitude)
-        _gecode_cache[loc_str] = loc_tup
-    logging.debug("cached {} locations".format(len(_gecode_cache)))
+        loc_dict = {'city': city, 'state': state, 'country': country,
+                    'latitude': latitude, 'longitude': longitude}
+        _gecode_cache[loc_str] = loc_dict
+    logging.debug("cached {} locations from {} rows".format(len(_gecode_cache), curs.rowcount))
 
     # grab the records to be updated
     logging.debug("selecting records to geocode")
-    sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s"
+    sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s ORDER BY job_id"
     if chunk_size:
         sql += " LIMIT " + str(chunk_size)
+    logging.debug(sql % last_id)
     curs.execute(sql, (last_id,))
 
-    logging.debug("updating records")
+    logging.debug("updating {} records".format(curs.rowcount))
     curs_up = conn.cursor()
     for r, rec in enumerate(curs):
         job_id, loc_str = rec
         geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
+        # logging.debug("{} => {}".format(loc_str, geo))
         if geo:
             update_row(curs_up, JOB_TABLE, {'job_id': job_id}, geo)
         if r % 100 == 0:
-            logging.debug("geocoded {} records".format(r))
+            logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
             geocode_cache_report()
             conn.commit()
+
+    conn.commit()
 
 
 def add_column(conn, tab_name, col_name, col_type):
@@ -615,6 +645,7 @@ def update_row(curs, table_name, where_dict, update_dict):
     sql = "UPDATE " + table_name
     sql += " SET " + ", ".join([u + "=%s" for u in up_names])
     sql += " WHERE " + " AND ".join([w + "=%s" for w in where_names])
+    logging.debug(sql % (up_vals + where_vals))
     try:
         curs.execute(sql, up_vals + where_vals)
     except Exception as err:
