@@ -552,7 +552,8 @@ def geocode_blank_locs(conn, chunk_size=None):
 
     # grab the records to be updated
     logging.debug("selecting records to geocode")
-    sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s ORDER BY job_id"
+    sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s "
+    sql += "AND location IS NOT NULL ORDER BY job_id"
     if chunk_size:
         sql += " LIMIT " + str(chunk_size)
     logging.debug(sql % last_id)
