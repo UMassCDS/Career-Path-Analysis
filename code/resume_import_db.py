@@ -462,7 +462,7 @@ def geocode_loc(loc_str_raw, sleep_secs):
             break
         except (geopy.exc.GeocoderTimedOut, geopy.exc.GeocoderUnavailable) as err:
             logging.debug("geocode failure {}: {}".format(attempt, err))
-            time.sleep(10)
+            time.sleep(120*(attempt+1))
             continue
     else:
         raise Exception("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
