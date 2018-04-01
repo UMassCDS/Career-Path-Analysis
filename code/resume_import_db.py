@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(mes
 
 GEOCODE_SLEEP_SECS = 1
 GEOCODE_ATTEMPTS = 5
+GEOCODE_MAX_FAILS = 10
 # DB_NAME = 'careerpaths'
 
 RESUME_TABLE = 'resumes'
@@ -465,7 +466,8 @@ def geocode_loc(loc_str_raw, sleep_secs):
             time.sleep(120*(attempt+1))
             continue
     else:
-        raise Exception("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
+        # raise Exception("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
+        return None
 
     if location:
         # location = get_best_geo(locations)
@@ -561,12 +563,19 @@ def geocode_blank_locs(conn, chunk_size=None):
 
     logging.debug("updating {} records".format(curs.rowcount))
     curs_up = conn.cursor()
+    fail_count = 0
     for r, rec in enumerate(curs):
         job_id, loc_str = rec
         geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
         # logging.debug("{} => {}".format(loc_str, geo))
         if geo:
             update_row(curs_up, JOB_TABLE, {'job_id': job_id}, geo)
+            fail_count = 0
+        else:
+            fail_count += 1
+            if fail_count > GEOCODE_MAX_FAILS:
+                raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
+
         if r % 100 == 0:
             logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
             geocode_cache_report()
