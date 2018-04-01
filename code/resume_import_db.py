@@ -456,7 +456,7 @@ def geocode_loc(loc_str_raw, sleep_secs):
 
     for attempt in range(GEOCODE_ATTEMPTS):
         try:
-            location = _geolocator.geocode(loc_str, exactly_one=True)
+            location = _geolocator.geocode(loc_str, exactly_one=True, timeout=10)
             if sleep_secs:
                 time.sleep(sleep_secs)
             break
