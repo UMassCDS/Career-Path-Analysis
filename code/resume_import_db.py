@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(mes
 
 GEOCODE_SLEEP_SECS = 1
 GEOCODE_ATTEMPTS = 5
-GEOCODE_MAX_FAILS = 10
+GEOCODE_MAX_FAILS = 100
 # DB_NAME = 'careerpaths'
 
 RESUME_TABLE = 'resumes'
