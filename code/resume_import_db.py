@@ -1,21 +1,13 @@
-import sys
 import re
 import getpass
 import argparse
-import time
 import logging
 import psycopg2 as db
 import resume_import
-import resume_common
-import geopy.geocoders
-import geopy.exc
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
-GEOCODE_SLEEP_SECS = 1
-GEOCODE_ATTEMPTS = 5
-GEOCODE_MAX_FAILS = 100
 # DB_NAME = 'careerpaths'
 
 RESUME_TABLE = 'resumes'
@@ -80,7 +72,7 @@ EDU_COLS = [
 # https://www.dataquest.io/blog/loading-data-into-postgres/
 
 
-def parse_all_resumes(conn, infile_names, geocode=False):
+def parse_all_resumes(conn, infile_names):
     curs = conn.cursor()
     resume_count = 0
     err_count = 0
@@ -89,10 +81,8 @@ def parse_all_resumes(conn, infile_names, geocode=False):
 
         if i % 1000 == 0:
             logging.debug("resume xml {}".format(i))
-            if geocode:
-                geocode_cache_report()
 
-        ret = parse_resume_db(curs, resume_xml, geocode)
+        ret = parse_resume_db(curs, resume_xml)
         if ret:
             err_count += 1
         if i % 1000 == 0:
@@ -128,7 +118,7 @@ def parse_all_resumes(conn, infile_names, geocode=False):
 # 		<ChannelName>New Monster</ChannelName>
 # 		<WillingnessToTravelInternalName>Up to 25% travel</WillingnessToTravelInternalName>
 # 		<DesiredJobTitle>General Manager</DesiredJobTitle>
-def parse_resume_db(curs, resume_xml, geocode=True):
+def parse_resume_db(curs, resume_xml):
     attrs = {}
 
     # First, grab all the resume fields
@@ -208,11 +198,6 @@ def parse_resume_db(curs, resume_xml, geocode=True):
                           'title': title,
                           'description': description
                         }
-            if geocode and location:
-                geo = geocode_loc(location, GEOCODE_SLEEP_SECS)
-                if geo is not None:
-                    exp_attrs.update(geo)
-
             insert_row(curs, JOB_TABLE, exp_attrs)
             # experiences.append(exp_attrs)
 
@@ -425,92 +410,6 @@ def standardize_job_locations(conn):
                                         float(good_count)/(good_count+bad_count))
 
 
-_geolocator = geopy.geocoders.Nominatim()
-_geocode_cache = {}
-_geocode_cache_hits = 0
-_geocode_cache_misses = 0
-
-
-def geocode_cache_report():
-    h = _geocode_cache_hits
-    m = _geocode_cache_misses
-    perc = float(h)/(h+m) if (h+m) > 0 else 0
-    logging.debug("geocode cache: {} entries, {} calls ({} hits, {} misses, {})".format(
-            len(_geocode_cache), h + m, h, m, perc))
-
-
-def geocode_loc(loc_str_raw, sleep_secs):
-    global _geolocator, _geocode_cache, _geocode_cache_hits, _geocode_cache_misses
-
-    loc_str = loc_str_raw.strip().lower()
-    if loc_str.endswith(' ca'):  # dirty hack to deal with a common geocoding error
-        loc_str = loc_str.rsplit(' ca', 1)[0] + ' california'
-
-    if loc_str in _geocode_cache:
-        _geocode_cache_hits += 1
-        return _geocode_cache[loc_str]
-    else:
-        _geocode_cache_misses += 1
-
-    # if (_gecode_cache_hits + _gecode_cache_misses) % 100 == 0:
-    #     geocode_cache_report()
-
-    for attempt in range(GEOCODE_ATTEMPTS):
-        try:
-            location = _geolocator.geocode(loc_str, exactly_one=True, timeout=10)
-            if sleep_secs:
-                time.sleep(sleep_secs)
-            break
-        except (geopy.exc.GeocoderTimedOut, geopy.exc.GeocoderUnavailable) as err:
-            logging.debug("geocode failure {}: {}".format(attempt, err))
-            time.sleep(30*(attempt+1))
-            continue
-    else:
-        # raise Exception("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
-        logging.debug("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
-        return None
-
-    if location:
-        # location = get_best_geo(locations)
-
-        # Nominatim format is ...city, (county,) state, (zip,) country
-        addr_elts = location.address.split(', ')
-
-        # if there's a zip it'll be second to last
-        if (len(addr_elts) >= 2) and addr_elts[-2].isnumeric():
-            # logging.debug(addr_elts)
-            zip = addr_elts.pop(-2)
-
-
-        num_elts = len(addr_elts)
-        if num_elts > 3:  # got a county and city
-            city, county, state, country = addr_elts[-4:]
-        elif num_elts == 3:
-            city, state, country = addr_elts[-3:]
-        elif num_elts == 2:
-            city, country = addr_elts[-2:]
-            state = None
-        elif num_elts == 1:
-            country = addr_elts[0]
-            city = None
-            state = None
-        else:
-            logging.debug("empty geoloc address: " + location.address)
-            country = None
-            city = None
-            state = None
-
-        loc_dict = {'city': city, 'state': state, 'country': country,
-                    'latitude':location.latitude, 'longitude': location.longitude}
-        _geocode_cache[loc_str] = loc_dict
-        # logging.debug("geocoded {} => {}".format(loc_str_raw, loc_dict))
-        return loc_dict
-
-    else:
-        _geocode_cache[loc_str] = None
-        return None
-
-
 # # Right now, just pick the first one that's in the USA (this method is essentially here to stop
 # # 'ca' from getting turned into 'Candada' instead of 'California'
 # def get_best_geo(locations):
@@ -525,77 +424,6 @@ def geocode_loc(loc_str_raw, sleep_secs):
 #     }
 #     locations.sort(key=lambda loc: priority_rank.get(loc.address.rsplit(', ', 1)[-1], sys.maxint))
 #     return locations[0]
-
-
-def geocode_blank_locs(conn, chunk_size=None, cont=True):
-    global _geocode_cache
-    curs = conn.cursor()
-
-    # get the id of the last record we successfully geocoded
-    last_id = -1
-    if cont:
-        curs.execute("SELECT max(job_id) FROM " + JOB_TABLE + " WHERE country IS NOT NULL")
-        last_id = curs.fetchone()[0]
-        logging.debug("last known geocoded job_id: {}".format(last_id))
-        if last_id is None:
-            last_id = -1
-
-    # now update the cache with the ones that we got already
-    logging.debug("updating geocode cache")
-    sql = "SELECT DISTINCT location, city, state, country, latitude, longitude "
-    sql += "FROM " + JOB_TABLE + " "
-    sql += "WHERE job_id <= %s AND location IS NOT NULL"
-    curs.execute(sql, (last_id,))
-    for rec in curs:
-        loc_str_raw, city, state, country, latitude, longitude = rec
-        # n.b.: make sure this matches cacheing above
-        loc_str = loc_str_raw.strip().lower()
-        loc_dict = {'city': city, 'state': state, 'country': country,
-                    'latitude': latitude, 'longitude': longitude}
-        _geocode_cache[loc_str] = loc_dict
-    logging.debug("cached {} locations from {} rows".format(len(_geocode_cache), curs.rowcount))
-
-    # grab the records to be updated
-    logging.debug("selecting records to geocode")
-    sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s "
-    sql += "AND location IS NOT NULL AND country IS NULL ORDER BY job_id"
-    if chunk_size:
-        sql += " LIMIT " + str(chunk_size)
-    logging.debug(sql % last_id)
-    curs.execute(sql, (last_id,))
-
-    logging.debug("updating {} records".format(curs.rowcount))
-    curs_up = conn.cursor()
-    fail_count = 0
-    for r, rec in enumerate(curs):
-        job_id, loc_str = rec
-        geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
-        logging.debug("{} => {}".format(loc_str, geo))
-
-        # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NOT NULL")
-        # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
-
-        if geo:
-            update_row(curs_up, JOB_TABLE, {'job_id': job_id}, geo)
-            fail_count = 0
-
-            conn.commit()
-            curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NOT NULL")
-            logging.debug("after update: {} null country records".format(curs_up.fetchone()[0]))
-
-        else:
-            fail_count += 1
-            if fail_count > GEOCODE_MAX_FAILS:
-                raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
-
-
-
-        if r % 100 == 0:
-            logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
-            geocode_cache_report()
-            conn.commit()
-
-    conn.commit()
 
 
 def add_column(conn, tab_name, col_name, col_type):
@@ -721,7 +549,6 @@ if __name__ == '__main__':
     parser.add_argument('--host', default='localhost')
     parser.add_argument('--user', default=None)
     parser.add_argument('--db', default=None)
-    parser.add_argument('--geocode', action='store_true')
     parser.add_argument('infile_names', nargs='+')
     args = parser.parse_args()
 
@@ -738,7 +565,7 @@ if __name__ == '__main__':
 
     logging.info("loading infiles")
     # resume_import.xml2resumes(args.infile_names, parse_resume_db)
-    parse_all_resumes(conn, args.infile_names, args.geocode)
+    parse_all_resumes(conn, args.infile_names)
 
     # sys.stderr.write("read {} resumes\n".format(len(resumes)))
 
