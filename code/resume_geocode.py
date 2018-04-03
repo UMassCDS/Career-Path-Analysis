@@ -15,12 +15,13 @@ if __name__ == '__main__':
     parser.add_argument('user')
     parser.add_argument('db')
     parser.add_argument('--chunk_size', default=None)
+    parser.add_argument('--cont', action='store_true')
     args = parser.parse_args()
 
     logging.info("connecting to db")
     conn = impdb.get_connection(args.host, args.db, args.user)
 
     logging.info("geocoding {} records".format(args.chunk_size if args.chunk_size else 1000000))
-    impdb.geocode_blank_locs(conn, chunk_size=args.chunk_size)
+    impdb.geocode_blank_locs(conn, chunk_size=args.chunk_size, cont=args.cont)
 
     conn.commit()

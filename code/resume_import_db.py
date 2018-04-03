@@ -467,6 +467,7 @@ def geocode_loc(loc_str_raw, sleep_secs):
             continue
     else:
         # raise Exception("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
+        logging.debug("{} geocode failure attempts in a row".format(GEOCODE_ATTEMPTS))
         return None
 
     if location:
@@ -502,7 +503,7 @@ def geocode_loc(loc_str_raw, sleep_secs):
         loc_dict = {'city': city, 'state': state, 'country': country,
                     'latitude':location.latitude, 'longitude': location.longitude}
         _geocode_cache[loc_str] = loc_dict
-        # logging.debug("geocoded {} => {}".format(loc_str_raw, loc_tup))
+        # logging.debug("geocoded {} => {}".format(loc_str_raw, loc_dict))
         return loc_dict
 
     else:
@@ -526,16 +527,18 @@ def geocode_loc(loc_str_raw, sleep_secs):
 #     return locations[0]
 
 
-def geocode_blank_locs(conn, chunk_size=None):
+def geocode_blank_locs(conn, chunk_size=None, cont=True):
     global _geocode_cache
     curs = conn.cursor()
 
     # get the id of the last record we successfully geocoded
-    curs.execute("SELECT max(job_id) FROM " + JOB_TABLE + " WHERE country IS NOT NULL")
-    last_id = curs.fetchone()[0]
-    logging.debug("last known geocoded job_id: {}".format(last_id))
-    if last_id is None:
-        last_id = -1
+    last_id = -1
+    if cont:
+        curs.execute("SELECT max(job_id) FROM " + JOB_TABLE + " WHERE country IS NOT NULL")
+        last_id = curs.fetchone()[0]
+        logging.debug("last known geocoded job_id: {}".format(last_id))
+        if last_id is None:
+            last_id = -1
 
     # now update the cache with the ones that we got already
     logging.debug("updating geocode cache")
@@ -555,7 +558,7 @@ def geocode_blank_locs(conn, chunk_size=None):
     # grab the records to be updated
     logging.debug("selecting records to geocode")
     sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s "
-    sql += "AND location IS NOT NULL ORDER BY job_id"
+    sql += "AND location IS NOT NULL AND country IS NULL ORDER BY job_id"
     if chunk_size:
         sql += " LIMIT " + str(chunk_size)
     logging.debug(sql % last_id)
@@ -567,14 +570,25 @@ def geocode_blank_locs(conn, chunk_size=None):
     for r, rec in enumerate(curs):
         job_id, loc_str = rec
         geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
-        # logging.debug("{} => {}".format(loc_str, geo))
+        logging.debug("{} => {}".format(loc_str, geo))
+
+        # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NOT NULL")
+        # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
+
         if geo:
             update_row(curs_up, JOB_TABLE, {'job_id': job_id}, geo)
             fail_count = 0
+
+            conn.commit()
+            curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NOT NULL")
+            logging.debug("after update: {} null country records".format(curs_up.fetchone()[0]))
+
         else:
             fail_count += 1
             if fail_count > GEOCODE_MAX_FAILS:
                 raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
+
+
 
         if r % 100 == 0:
             logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
@@ -665,11 +679,13 @@ def update_row(curs, table_name, where_dict, update_dict):
     sql = "UPDATE " + table_name
     sql += " SET " + ", ".join([u + "=%s" for u in up_names])
     sql += " WHERE " + " AND ".join([w + "=%s" for w in where_names])
-    # logging.debug(sql % (up_vals + where_vals))
+    logging.debug(sql % (up_vals + where_vals))
     try:
         curs.execute(sql, up_vals + where_vals)
+        logging.debug("updated {} record(s)".format(curs.rowcount))
+
     except Exception as err:
-        logging.warning("error updating record: '{} {}', {}".format(sql, up_vals + where_vals, err))
+        logging.debug("error updating record: '{} {}', {}".format(sql, up_vals + where_vals, err))
         # raise err
 
 
