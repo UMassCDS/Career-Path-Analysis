@@ -195,6 +195,56 @@ def geocode_blank_locs(conn, chunk_size=None, cont=True, match_str=None):
     conn.commit()
 
 
+def geocode_blank_locs_by_size(conn, chunk_size=None, match_str=None):
+    global _geocode_cache
+    curs = conn.cursor()
+
+    load_cache(curs)
+
+    # grab the locations to geocoded
+    logging.debug("selecting locations to geocode")
+    sql = "SELECT location, count(*) FROM " + JOB_TABLE + " "
+    sql += "WHERE location IS NOT NULL AND country IS NULL "
+    if match_str:
+        sql += "AND location LIKE '" + match_str + "' "
+    sql += "GROUP BY location ORDER BY count(*) DESC"
+    if chunk_size:
+        sql += " LIMIT " + str(chunk_size)
+    logging.debug(sql)
+    curs.execute(sql)
+
+    logging.debug("updating records")
+    curs_up = conn.cursor()
+    fail_count = 0
+    for r, rec in enumerate(curs):
+        loc_str, rec_count = rec
+        geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
+        logging.debug("{} => {}".format(loc_str, geo))
+
+        # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
+        # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
+
+        if geo:
+            impdb.update_row(curs_up, JOB_TABLE, {'location': loc_str}, geo)
+            fail_count = 0
+
+            conn.commit()
+            # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
+            # logging.debug("after update: {} null country records".format(curs_up.fetchone()[0]))
+
+        else:
+            fail_count += 1
+            if fail_count > GEOCODE_MAX_FAILS:
+                raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
+
+        if r % 100 == 0:
+            logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
+            geocode_cache_report()
+            conn.commit()
+
+    conn.commit()
+
+
 def load_cache(curs, min_id=None, max_id=None):
     params = []
     logging.debug("updating geocode cache")
@@ -239,6 +289,7 @@ if __name__ == '__main__':
     conn = impdb.get_connection(args.host, args.db, args.user)
 
     logging.info("geocoding {} records".format(args.chunk_size if args.chunk_size else 1000000))
-    geocode_blank_locs(conn, chunk_size=args.chunk_size, cont=args.cont, match_str=args.match)
+    # geocode_blank_locs(conn, chunk_size=args.chunk_size, cont=args.cont, match_str=args.match)
+    geocode_blank_locs_by_size(conn, chunk_size=args.chunk_size, match_str=args.match)
 
     conn.commit()
