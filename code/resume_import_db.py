@@ -276,63 +276,6 @@ def sort_stints(resume):
     return stints_sorted
 
 
-STATE__ABBREV = {
-    'ALABAMA': 'AL',
-    'ALASKA': 'AK',
-    'ARIZONA': 'AZ',
-    'ARKANSAS': 'AR',
-    'CALIFORNIA': 'CA',
-    'COLORADO': 'CO',
-    'CONNECTICUT': 'CT',
-    'DELAWARE': 'DE',
-    'FLORIDA': 'FL',
-    'GEORGIA': 'GA',
-    'HAWAII': 'HI',
-    'IDAHO': 'ID',
-    'ILLINOIS': 'IL',
-    'INDIANA': 'IN',
-    'IOWA': 'IA',
-    'KANSAS': 'KS',
-    'KENTUCKY': 'KY',
-    'LOUISIANA': 'LA',
-    'MAINE': 'ME',
-    'MARYLAND': 'MD',
-    'MASSACHUSETTS': 'MA',
-    'MICHIGAN': 'MI',
-    'MINNESOTA': 'MN',
-    'MISSISSIPPI': 'MS',
-    'MISSOURI': 'MO',
-    'MONTANA': 'MT',
-    'NEBRASKA': 'NE',
-    'NEVADA': 'NV',
-    'NEW HAMPSHIRE': 'NH',
-    'NEW JERSEY': 'NJ',
-    'NEW MEXICO': 'NM',
-    'NEW YORK': 'NY',
-    'NORTH CAROLINA': 'NC',
-    'NORTH DAKOTA': 'ND',
-    'OHIO': 'OH',
-    'OKLAHOMA': 'OK',
-    'OREGON': 'OR',
-    'PENNSYLVANIA': 'PA',
-    'RHODE ISLAND': 'RI',
-    'SOUTH CAROLINA': 'SC',
-    'SOUTH DAKOTA': 'SD',
-    'TENNESSEE': 'TN',
-    'TEXAS': 'TX',
-    'UTAH': 'UT',
-    'VERMONT': 'VT',
-    'VIRGINIA': 'VA',
-    'WASHINGTON': 'WA',
-    'WEST VIRGINIA': 'WV',
-    'WISCONSIN': 'WI',
-    'WYOMING': 'WY',
-    'GUAM': 'GU',
-    'PUERTO RICO': 'PR',
-    'VIRGIN ISLANDS': 'VI'
-}
-
-
 def find_one(lst, targets):
     for i in range(len(lst)-1, -1, -1):
         if lst[i] in targets:
@@ -502,18 +445,31 @@ def insert_row(curs, table_name, col__val):
 
 
 def update_row(curs, table_name, where_dict, update_dict):
-    where_names, where_vals = zip(*where_dict.items())
+    # where_names, where_vals = zip(*where_dict.items())
     up_names, up_vals = zip(*update_dict.items())
     sql = "UPDATE " + table_name
     sql += " SET " + ", ".join([u + "=%s" for u in up_names])
-    sql += " WHERE " + " AND ".join([w + "=%s" for w in where_names])
-    logging.debug(sql % (up_vals + where_vals))
+    # sql += " WHERE " + " AND ".join([w + "=%s" for w in where_names])
+
+    sql += " WHERE "
+    where_names = []
+    where_vals = []
+    where_nulls = []
+    for name, val in where_dict.items():
+        if val is not None:
+            where_names.append(name)
+            where_vals.append(val)
+        else:
+            where_nulls.append(name)
+    sql += " AND ".join([w + "=%s" for w in where_names] + [w + " IS NULL" for w in where_nulls])
+
+    logging.debug(sql.replace('%s', '{}').format(*(list(up_vals) + where_vals)))
     try:
-        curs.execute(sql, up_vals + where_vals)
+        curs.execute(sql, list(up_vals) + where_vals)
         logging.debug("updated {} record(s)".format(curs.rowcount))
 
     except Exception as err:
-        logging.debug("error updating record: '{} {}', {}".format(sql, up_vals + where_vals, err))
+        logging.debug("error updating record: '{} {}', {}".format(sql, list(up_vals) + where_vals, err))
         # raise err
 
 

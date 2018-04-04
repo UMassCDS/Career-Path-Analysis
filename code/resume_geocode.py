@@ -19,6 +19,63 @@ _geocode_cache = {}
 _geocode_cache_hits = 0
 _geocode_cache_misses = 0
 
+STATE__ABBREV = {
+    'ALABAMA': 'AL',
+    'ALASKA': 'AK',
+    'ARIZONA': 'AZ',
+    'ARKANSAS': 'AR',
+    'CALIFORNIA': 'CA',
+    'COLORADO': 'CO',
+    'CONNECTICUT': 'CT',
+    'DELAWARE': 'DE',
+    'FLORIDA': 'FL',
+    'GEORGIA': 'GA',
+    'HAWAII': 'HI',
+    'IDAHO': 'ID',
+    'ILLINOIS': 'IL',
+    'INDIANA': 'IN',
+    'IOWA': 'IA',
+    'KANSAS': 'KS',
+    'KENTUCKY': 'KY',
+    'LOUISIANA': 'LA',
+    'MAINE': 'ME',
+    'MARYLAND': 'MD',
+    'MASSACHUSETTS': 'MA',
+    'MICHIGAN': 'MI',
+    'MINNESOTA': 'MN',
+    'MISSISSIPPI': 'MS',
+    'MISSOURI': 'MO',
+    'MONTANA': 'MT',
+    'NEBRASKA': 'NE',
+    'NEVADA': 'NV',
+    'NEW HAMPSHIRE': 'NH',
+    'NEW JERSEY': 'NJ',
+    'NEW MEXICO': 'NM',
+    'NEW YORK': 'NY',
+    'NORTH CAROLINA': 'NC',
+    'NORTH DAKOTA': 'ND',
+    'OHIO': 'OH',
+    'OKLAHOMA': 'OK',
+    'OREGON': 'OR',
+    'PENNSYLVANIA': 'PA',
+    'RHODE ISLAND': 'RI',
+    'SOUTH CAROLINA': 'SC',
+    'SOUTH DAKOTA': 'SD',
+    'TENNESSEE': 'TN',
+    'TEXAS': 'TX',
+    'UTAH': 'UT',
+    'VERMONT': 'VT',
+    'VIRGINIA': 'VA',
+    'WASHINGTON': 'WA',
+    'WEST VIRGINIA': 'WV',
+    'WISCONSIN': 'WI',
+    'WYOMING': 'WY',
+    'GUAM': 'GU',
+    'PUERTO RICO': 'PR',
+    'VIRGIN ISLANDS': 'VI'
+}
+STATE_NAMES = set([k.lower() for k in STATE__ABBREV.keys()])
+STATE_ABBREVS = set([v.lower() for v in STATE__ABBREV.values()])
 
 def geocode_loc(loc_str_raw, sleep_secs):
     global _geolocator, _geocode_cache, _geocode_cache_hits, _geocode_cache_misses
@@ -218,14 +275,23 @@ def geocode_blank_locs_by_size(conn, chunk_size=None, match_str=None):
     fail_count = 0
     for r, rec in enumerate(curs):
         loc_str, rec_count = rec
+        logging.debug("geocoding '{}' ({})".format(loc_str, rec_count))
         geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
         logging.debug("{} => {}".format(loc_str, geo))
+
+        # hack to handle cases like 'houstontx'
+        if geo is None:
+            loc_str_unconcat = unconcat_state(loc_str)
+            if loc_str_unconcat:
+                logging.debug("trying {}".format(loc_str_unconcat))
+                geo = geocode_loc(loc_str_unconcat, GEOCODE_SLEEP_SECS)
+                logging.debug("{} => {}".format(loc_str, geo))
 
         # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
         # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
 
         if geo:
-            impdb.update_row(curs_up, JOB_TABLE, {'location': loc_str}, geo)
+            impdb.update_row(curs_up, JOB_TABLE, {'location': loc_str, 'country': None }, geo)
             fail_count = 0
 
             conn.commit()
@@ -243,6 +309,16 @@ def geocode_blank_locs_by_size(conn, chunk_size=None, match_str=None):
             conn.commit()
 
     conn.commit()
+
+
+state_names_abbrevs_sort = sorted(STATE_NAMES.union(STATE_ABBREVS),
+                                  key=lambda x: len(x), reverse=True)
+def unconcat_state(loc_str):
+    for st in state_names_abbrevs_sort:
+        if loc_str.endswith(st) and not loc_str.endswith(' ' + st):
+            stuff, _ = loc_str.rsplit(st, 1)
+            return stuff + ' ' + st
+    return None
 
 
 def load_cache(curs, min_id=None, max_id=None):
