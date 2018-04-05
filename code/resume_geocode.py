@@ -1,3 +1,4 @@
+import sys
 import argparse
 import logging
 import time
@@ -84,18 +85,23 @@ def preprocess_loc(loc_str_raw):
     loc_str = loc_str_raw.strip().lower()
 
     # some dirty hacks to deal with a common geocoding errors
-    loc_str_elts = loc_str.split()
+    ny_split = loc_str.split('new york')
+    if len(ny_split) > 2:
+        loc_str = "NY".join(loc_str.rsplit('new york', 1))
 
-    if loc_str.endswith(' ca'):
-        loc_str = loc_str.rsplit(' ca', 1)[0] + ' california United States of America'
+    # loc_str_elts = loc_str.split()
+    #
+    # if loc_str.endswith(' ca'):
+    #     loc_str = loc_str.rsplit(' ca', 1)[0] + ' california United States of America'
+    #
+    # if loc_str == 'ny ny':
+    #     loc_str = 'new york ny United States of America'
+    #
+    # if 'nyc' in loc_str_elts:
+    #     loc_str = ' '.join(['new york city' if (elt == 'nyc') else elt for elt in loc_str_elts])
+    #     loc_str += " United States of America"
 
-    if loc_str == 'ny ny':
-        loc_str = 'new york ny United States of America'
-
-    if 'nyc' in loc_str_elts:
-        loc_str = ' '.join(['new york city' if (elt == 'nyc') else elt for elt in loc_str_elts])
-        loc_str += "United States of America"
-
+    loc_str += ' United States of America'
 
     return loc_str
 
@@ -182,91 +188,105 @@ def get_max_id(curs, table, id_col, cond):
     return curs.fetchone()[0]
 
 
-def geocode_blank_locs(conn, chunk_size=None, cont=True, match_str=None):
-    global _geocode_cache
-    curs = conn.cursor()
-
-    # get the id of the last record we successfully geocoded
-    last_id = -1
-    if cont:
-        # curs.execute("SELECT max(job_id) FROM " + JOB_TABLE + " WHERE country IS NOT NULL")
-        # last_id = curs.fetchone()[0]
-        last_id = get_max_id(curs, JOB_TABLE, 'job_id', 'country IS NOT NULL')
-        logging.debug("last known geocoded job_id: {}".format(last_id))
-        if last_id is not None:
-            load_cache(curs, max_id=last_id)
-
-    else:
-        load_cache(curs)
-
-    # now update the cache with the ones that we got already
-    # logging.debug("updating geocode cache")
-    # sql = "SELECT DISTINCT location, city, state, country, latitude, longitude "
-    # sql += "FROM " + JOB_TABLE + " "
-    # sql += "WHERE job_id <= %s AND location IS NOT NULL"
-    # curs.execute(sql, (last_id,))
-    # for rec in curs:
-    #     loc_str_raw, city, state, country, latitude, longitude = rec
-    #     # n.b.: make sure this matches cacheing above
-    #     loc_str = loc_str_raw.strip().lower()
-    #     loc_dict = {'city': city, 'state': state, 'country': country,
-    #                 'latitude': latitude, 'longitude': longitude}
-    #     _geocode_cache[loc_str] = loc_dict
-    # logging.debug("cached {} locations from {} rows".format(len(_geocode_cache), curs.rowcount))
-
-    # grab the records to be updated
-    logging.debug("selecting records to geocode")
-    sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s "
-    sql += "AND location IS NOT NULL AND country IS NULL "
-    if match_str:
-        sql += "AND location LIKE '" + match_str + "' "
-    sql += "ORDER BY job_id"
-    if chunk_size:
-        sql += " LIMIT " + str(chunk_size)
-
-    logging.debug(sql.replace('%s', '{}').format(last_id))
-    logging.debug(sql)
-    logging.debug(last_id)
-    curs.execute(sql, (last_id,))
-
-    logging.debug("updating {} records".format(curs.rowcount))
-    curs_up = conn.cursor()
-    fail_count = 0
-    for r, rec in enumerate(curs):
-        job_id, loc_str = rec
-        geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
-        logging.debug("{} => {}".format(loc_str, geo))
-
-        # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
-        # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
-
-        if geo:
-            impdb.update_row(curs_up, JOB_TABLE, {'job_id': job_id}, geo)
-            fail_count = 0
-
-            conn.commit()
-            # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
-            # logging.debug("after update: {} null country records".format(curs_up.fetchone()[0]))
-
-        else:
-            fail_count += 1
-            if fail_count > GEOCODE_MAX_FAILS:
-                raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
-
-        if r % 100 == 0:
-            logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
-            geocode_cache_report()
-            conn.commit()
-
-    conn.commit()
+# def geocode_blank_locs(conn, chunk_size=None, cont=True, match_str=None):
+#     global _geocode_cache
+#     curs = conn.cursor()
+#
+#     # get the id of the last record we successfully geocoded
+#     last_id = -1
+#     if cont:
+#         # curs.execute("SELECT max(job_id) FROM " + JOB_TABLE + " WHERE country IS NOT NULL")
+#         # last_id = curs.fetchone()[0]
+#         last_id = get_max_id(curs, JOB_TABLE, 'job_id', 'country IS NOT NULL')
+#         logging.debug("last known geocoded job_id: {}".format(last_id))
+#         if last_id is not None:
+#             load_cache(curs, max_id=last_id)
+#
+#     else:
+#         load_cache(curs)
+#
+#     # now update the cache with the ones that we got already
+#     # logging.debug("updating geocode cache")
+#     # sql = "SELECT DISTINCT location, city, state, country, latitude, longitude "
+#     # sql += "FROM " + JOB_TABLE + " "
+#     # sql += "WHERE job_id <= %s AND location IS NOT NULL"
+#     # curs.execute(sql, (last_id,))
+#     # for rec in curs:
+#     #     loc_str_raw, city, state, country, latitude, longitude = rec
+#     #     # n.b.: make sure this matches cacheing above
+#     #     loc_str = loc_str_raw.strip().lower()
+#     #     loc_dict = {'city': city, 'state': state, 'country': country,
+#     #                 'latitude': latitude, 'longitude': longitude}
+#     #     _geocode_cache[loc_str] = loc_dict
+#     # logging.debug("cached {} locations from {} rows".format(len(_geocode_cache), curs.rowcount))
+#
+#     # grab the records to be updated
+#     logging.debug("selecting records to geocode")
+#     sql = "SELECT job_id, location FROM " + JOB_TABLE + " WHERE job_id > %s "
+#     sql += "AND location IS NOT NULL AND country IS NULL "
+#     if match_str:
+#         sql += "AND location LIKE '" + match_str + "' "
+#     sql += "ORDER BY job_id"
+#     if chunk_size:
+#         sql += " LIMIT " + str(chunk_size)
+#
+#     logging.debug(sql.replace('%s', '{}').format(last_id))
+#     logging.debug(sql)
+#     logging.debug(last_id)
+#     curs.execute(sql, (last_id,))
+#
+#     logging.debug("updating {} records".format(curs.rowcount))
+#     curs_up = conn.cursor()
+#     fail_count = 0
+#     for r, rec in enumerate(curs):
+#         job_id, loc_str = rec
+#         geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
+#         logging.debug("{} => {}".format(loc_str, geo))
+#
+#         # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
+#         # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
+#
+#         if geo:
+#             impdb.update_row(curs_up, JOB_TABLE, {'job_id': job_id}, geo)
+#             fail_count = 0
+#
+#             conn.commit()
+#             # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
+#             # logging.debug("after update: {} null country records".format(curs_up.fetchone()[0]))
+#
+#         else:
+#             fail_count += 1
+#             if fail_count > GEOCODE_MAX_FAILS:
+#                 raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
+#
+#         if r % 100 == 0:
+#             logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
+#             geocode_cache_report()
+#             conn.commit()
+#
+#     conn.commit()
 
 
 def get_blank_locs_by_size(conn, chunk_size=None, match_str=None):
     curs = conn.cursor()
-
     logging.debug("selecting locations to geocode")
     sql = "SELECT location, count(*) FROM " + JOB_TABLE + " "
     sql += "WHERE location IS NOT NULL AND country IS NULL "
+    if match_str:
+        sql += "AND location LIKE '" + match_str + "' "
+    sql += "GROUP BY location ORDER BY count(*) DESC"
+    if chunk_size:
+        sql += " LIMIT " + str(chunk_size)
+    logging.debug(sql)
+    curs.execute(sql)
+    return curs
+
+
+def get_unamerican_locs_by_size(conn, chunk_size=None, match_str=None):
+    curs = conn.cursor()
+    logging.debug("selecting foreign locations to geocode")
+    sql = "SELECT location, count(*) FROM " + JOB_TABLE + " "
+    sql += "WHERE country<>'United States of America' "
     if match_str:
         sql += "AND location LIKE '" + match_str + "' "
     sql += "GROUP BY location ORDER BY count(*) DESC"
@@ -337,10 +357,14 @@ def get_blank_locs_by_size(conn, chunk_size=None, match_str=None):
 #     conn.commit()
 
 
-def geocode_recs(conn, recs, fallback_funcs):
+def geocode_recs(conn, recs, fallback_funcs, use_cache=False):
     global _geocode_cache
-    curs = conn.cursor()
-    load_cache(curs)
+
+    if use_cache:
+        curs = conn.cursor()
+        load_cache(curs)
+    else:
+        clear_cache()
 
     logging.debug("updating records")
     curs_up = conn.cursor()
@@ -362,7 +386,7 @@ def geocode_recs(conn, recs, fallback_funcs):
                         break
 
         if geo:
-            impdb.update_row(curs_up, JOB_TABLE, {'location': loc_str, 'country': None }, geo)
+            impdb.update_row(curs_up, JOB_TABLE, {'location': loc_str }, geo)
             fail_count = 0
             conn.commit()
         else:
@@ -387,11 +411,19 @@ def unconcat_state(loc_str):
     return None
 
 
+def unamerican_loc(loc_str):
+    tag = 'United States of America'
+    if loc_str.endswith(tag):
+        return loc_str[:loc_str.index(tag)]
+    else:
+        return None
+
+
 _compound_locs = None
 def load_compound_locs(curs, num=20000):
     global _compound_locs
 
-    logging.debug("fetching {} compound location names")
+    logging.debug("fetching {} compound location names".format(num))
     sql = "SELECT location, count(*) FROM " + JOB_TABLE + " WHERE location LIKE '% % %' "
     sql += "GROUP BY location ORDER BY count(*) DESC LIMIT " + str(num)
     curs.execute(sql)
@@ -411,10 +443,10 @@ def match_compound_names(loc_str):
 
     loc_str = loc_str.strip().lower()
     loc_elts = loc_str.split()
-    if loc_elts[0] in _compound_locs:
+    if loc_elts and (loc_elts[0] in _compound_locs):
         unsquished = _compound_locs[loc_elts[0]]
         loc_str_unsquished = ' '.join([unsquished] + loc_elts[1:])
-        return loc_str_unsquished
+        return preprocess_loc(loc_str_unsquished)
     return None
 
 
@@ -443,6 +475,9 @@ def load_cache(curs, min_id=None, max_id=None):
     logging.debug("cached {} locations from {} rows".format(len(_geocode_cache), curs.rowcount))
     return curs.rowcount
 
+def clear_cache():
+    global _geocode_cache
+    _geocode_cache = dict()
 
 
 ##################################################
@@ -463,6 +498,16 @@ if __name__ == '__main__':
 
     logging.info("geocoding {} records".format(args.chunk_size if args.chunk_size else 1000000))
     # geocode_blank_locs(conn, chunk_size=args.chunk_size, cont=args.cont, match_str=args.match)
-    geocode_blank_locs_by_size(conn, chunk_size=args.chunk_size, match_str=args.match)
+    # geocode_blank_locs_by_size(conn, chunk_size=args.chunk_size, match_str=args.match)
+
+    # load_compound_locs(conn.cursor(), num=20000)
+    # blank_recs = get_blank_locs_by_size(conn, chunk_size=args.chunk_size, match_str=args.match)
+    # geocode_recs(conn, blank_recs, [match_compound_names])
+
+    recs = get_unamerican_locs_by_size(conn, chunk_size=args.chunk_size, match_str=args.match)
+    geocode_recs(conn, recs, [unamerican_loc])
 
     conn.commit()
+
+
+
