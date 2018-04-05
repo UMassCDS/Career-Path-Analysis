@@ -77,24 +77,33 @@ STATE__ABBREV = {
 STATE_NAMES = set([k.lower() for k in STATE__ABBREV.keys()])
 STATE_ABBREVS = set([v.lower() for v in STATE__ABBREV.values()])
 
-def geocode_loc(loc_str_raw, sleep_secs):
-    global _geolocator, _geocode_cache, _geocode_cache_hits, _geocode_cache_misses
 
+
+# this gets called on all initial records, but not neccesarily fallbacks
+def preprocess_loc(loc_str_raw):
     loc_str = loc_str_raw.strip().lower()
 
     # some dirty hacks to deal with a common geocoding errors
-    if loc_str.endswith(' ca'):
-        loc_str = loc_str.rsplit(' ca', 1)[0] + ' california'
-
     loc_str_elts = loc_str.split()
-    # if 'ny' in loc_str_elts:
-    #     logging.debug(loc_str + " => ")
-    #     loc_str = ' '.join(['new york' if (elt == 'ny') else elt for elt in loc_str_elts])
-    #     logging.debug(loc_str)
+
+    if loc_str.endswith(' ca'):
+        loc_str = loc_str.rsplit(' ca', 1)[0] + ' california United States of America'
+
     if loc_str == 'ny ny':
-        loc_str = 'new york ny'
-    elif 'nyc' in loc_str_elts:
+        loc_str = 'new york ny United States of America'
+
+    if 'nyc' in loc_str_elts:
         loc_str = ' '.join(['new york city' if (elt == 'nyc') else elt for elt in loc_str_elts])
+        loc_str += "United States of America"
+
+
+    return loc_str
+
+
+def geocode_loc(loc_str_raw, sleep_secs):
+    global _geolocator, _geocode_cache, _geocode_cache_hits, _geocode_cache_misses
+
+    loc_str = preprocess_loc(loc_str_raw)
 
     if loc_str in _geocode_cache:
         _geocode_cache_hits += 1
@@ -252,13 +261,9 @@ def geocode_blank_locs(conn, chunk_size=None, cont=True, match_str=None):
     conn.commit()
 
 
-def geocode_blank_locs_by_size(conn, chunk_size=None, match_str=None):
-    global _geocode_cache
+def get_blank_locs_by_size(conn, chunk_size=None, match_str=None):
     curs = conn.cursor()
 
-    load_cache(curs)
-
-    # grab the locations to geocoded
     logging.debug("selecting locations to geocode")
     sql = "SELECT location, count(*) FROM " + JOB_TABLE + " "
     sql += "WHERE location IS NOT NULL AND country IS NULL "
@@ -269,45 +274,106 @@ def geocode_blank_locs_by_size(conn, chunk_size=None, match_str=None):
         sql += " LIMIT " + str(chunk_size)
     logging.debug(sql)
     curs.execute(sql)
+    return curs
+
+
+# def geocode_blank_locs_by_size(conn, chunk_size=None, match_str=None):
+#     global _geocode_cache
+#     curs = conn.cursor()
+#
+#     load_cache(curs)
+#
+#     # grab the locations to geocoded
+#     logging.debug("selecting locations to geocode")
+#     sql = "SELECT location, count(*) FROM " + JOB_TABLE + " "
+#     sql += "WHERE location IS NOT NULL AND country IS NULL "
+#     if match_str:
+#         sql += "AND location LIKE '" + match_str + "' "
+#     sql += "GROUP BY location ORDER BY count(*) DESC"
+#     if chunk_size:
+#         sql += " LIMIT " + str(chunk_size)
+#     logging.debug(sql)
+#     curs.execute(sql)
+#
+#     logging.debug("updating records")
+#     curs_up = conn.cursor()
+#     fail_count = 0
+#     for r, rec in enumerate(curs):
+#         loc_str, rec_count = rec
+#         logging.debug("geocoding '{}' ({})".format(loc_str, rec_count))
+#         geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
+#         logging.debug("{} => {}".format(loc_str, geo))
+#
+#         # hack to handle cases like 'houstontx'
+#         if geo is None:
+#             loc_str_unconcat = unconcat_state(loc_str)
+#             if loc_str_unconcat:
+#                 loc_str_unconcat = preprocess_loc(loc_str_unconcat)
+#                 logging.debug("trying {}".format(loc_str_unconcat))
+#                 geo = geocode_loc(loc_str_unconcat, GEOCODE_SLEEP_SECS)
+#                 logging.debug("{} => {}".format(loc_str, geo))
+#
+#         # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
+#         # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
+#
+#         if geo:
+#             impdb.update_row(curs_up, JOB_TABLE, {'location': loc_str, 'country': None }, geo)
+#             fail_count = 0
+#
+#             conn.commit()
+#             # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
+#             # logging.debug("after update: {} null country records".format(curs_up.fetchone()[0]))
+#
+#         else:
+#             fail_count += 1
+#             if fail_count > GEOCODE_MAX_FAILS:
+#                 raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
+#
+#         if r % 100 == 0:
+#             logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
+#             geocode_cache_report()
+#             conn.commit()
+#
+#     conn.commit()
+
+
+def geocode_recs(conn, recs, fallback_funcs):
+    global _geocode_cache
+    curs = conn.cursor()
+    load_cache(curs)
 
     logging.debug("updating records")
     curs_up = conn.cursor()
     fail_count = 0
-    for r, rec in enumerate(curs):
-        loc_str, rec_count = rec
-        logging.debug("geocoding '{}' ({})".format(loc_str, rec_count))
+    for r, rec in enumerate(recs):
+        logging.debug("geocoding '{}'".format(rec))
+        loc_str = rec[0]
         geo = geocode_loc(loc_str, GEOCODE_SLEEP_SECS)
         logging.debug("{} => {}".format(loc_str, geo))
 
-        # hack to handle cases like 'houstontx'
         if geo is None:
-            loc_str_unconcat = unconcat_state(loc_str)
-            if loc_str_unconcat:
-                logging.debug("trying {}".format(loc_str_unconcat))
-                geo = geocode_loc(loc_str_unconcat, GEOCODE_SLEEP_SECS)
-                logging.debug("{} => {}".format(loc_str, geo))
-
-        # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
-        # logging.debug("before update: {} null country records".format(curs_up.fetchone()[0]))
+            for fallback_func in fallback_funcs:
+                loc_str_fallback = fallback_func(loc_str)
+                if loc_str_fallback:
+                    logging.debug("trying fallback '{}'".format(loc_str_fallback))
+                    geo = geocode_loc(loc_str_fallback, GEOCODE_SLEEP_SECS)
+                    logging.debug("{} => {}".format(loc_str, geo))
+                    if geo:
+                        break
 
         if geo:
             impdb.update_row(curs_up, JOB_TABLE, {'location': loc_str, 'country': None }, geo)
             fail_count = 0
-
             conn.commit()
-            # curs_up.execute("SELECT count(*) FROM " + JOB_TABLE  + " WHERE country IS NULL")
-            # logging.debug("after update: {} null country records".format(curs_up.fetchone()[0]))
-
         else:
             fail_count += 1
             if fail_count > GEOCODE_MAX_FAILS:
                 raise Exception("{} geocode failures in a row".format(GEOCODE_MAX_FAILS))
 
-        if r % 100 == 0:
-            logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
-            geocode_cache_report()
-            conn.commit()
-
+        # if r % 100 == 0:
+        #     logging.debug("geocode updated {}/{} records".format(r, curs.rowcount))
+        #     geocode_cache_report()
+        #     conn.commit()
     conn.commit()
 
 
@@ -317,7 +383,38 @@ def unconcat_state(loc_str):
     for st in state_names_abbrevs_sort:
         if loc_str.endswith(st) and not loc_str.endswith(' ' + st):
             stuff, _ = loc_str.rsplit(st, 1)
-            return stuff + ' ' + st
+            return preprocess_loc(stuff + ' ' + st + ' United States of America')
+    return None
+
+
+_compound_locs = None
+def load_compound_locs(curs, num=20000):
+    global _compound_locs
+
+    logging.debug("fetching {} compound location names")
+    sql = "SELECT location, count(*) FROM " + JOB_TABLE + " WHERE location LIKE '% % %' "
+    sql += "GROUP BY location ORDER BY count(*) DESC LIMIT " + str(num)
+    curs.execute(sql)
+
+    _compound_locs = dict()
+    for rec in curs:
+        loc_str = rec[0].strip().lower()
+        loc_elts = loc_str.split()
+        loc_squished = loc_elts[0] + loc_elts[1]
+        _compound_locs[loc_squished] = loc_elts[0] + ' ' + loc_elts[1]
+
+    return curs.rowcount
+
+
+def match_compound_names(loc_str):
+    global _compound_locs
+
+    loc_str = loc_str.strip().lower()
+    loc_elts = loc_str.split()
+    if loc_elts[0] in _compound_locs:
+        unsquished = _compound_locs[loc_elts[0]]
+        loc_str_unsquished = ' '.join([unsquished] + loc_elts[1:])
+        return loc_str_unsquished
     return None
 
 
