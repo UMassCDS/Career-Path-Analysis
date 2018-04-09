@@ -2,11 +2,26 @@ import sys
 import json
 import numpy as np
 import seaborn as sns
+import logging
+import os.path
 import matplotlib.pyplot as plt
 from resume_lda import read_topic_word_distribs
 
 
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 sns.set(color_codes=True)
+
+
+
+def inspect_output(infile_name, delim="\t"):
+    with open(infile_name, 'r') as infile:
+        ts, i, json_str = infile.readline().rstrip("\n").split(delim)
+        output_array = np.array(json.loads(json_str), np.double)
+        shape = output_array.shape
+        count = 1
+        for _ in infile:
+            count += 1
+        logging.debug("output shape: {}, {} iters".format(shape, count))
 
 
 def get_mean_vals(infile_name, burn=0, lag=0, delim="\t"):
@@ -22,6 +37,21 @@ def get_mean_vals(infile_name, burn=0, lag=0, delim="\t"):
             sum_array += json.loads(json_str)
             count += 1
     return sum_array / count
+
+
+def get_output_vals(infile_name, burn=0, lag=0, dtype=np.double, delim="\t"):
+    with open(infile_name, 'r') as infile:
+        iters = []
+
+        for iter, line in enumerate(infile):
+            if iter < burn:
+                continue
+            if iter % lag == 0:
+                ts, i, json_str = line.rstrip("\n").split(delim)
+                iters.append(np.array(json.loads(json_str), dtype))
+
+        logging.debug("got {} iters of output".format(len(iters)))
+        return np.array(iters, dtype)
 
 
 # print the average topic mix for each state
@@ -167,22 +197,33 @@ def print_top_trans(state_state_file_name, state_descs, state_topics):
 ########################################################
 if __name__ == '__main__':
 
-    s_t_file_name = sys.argv[1]
-    t_w_file_name = sys.argv[2]
-    s_s_file_name = sys.argv[3]
+    # s_t_file_name = sys.argv[1]
+    # t_w_file_name = sys.argv[2]
+    # s_s_file_name = sys.argv[3]
+    #
+    # # print_state_descs(s_t_file_name, t_w_file_name)
+    # state_descs = get_state_descs(s_t_file_name, t_w_file_name, 20)
+    #
+    # state_topics = get_state_topics(s_t_file_name, num=10)
+    #
+    #
+    # # print state_descs
+    #
+    # state_descs_str = [ [(w, float("{:.4f}".format(f))) for w, f in sd] for sd in state_descs]
+    #
+    # # for i, words in enumerate(state_descs):
+    # #     print i, ["{}({:.4f})".format(w, f) for w, f in words], "\n"
+    #
+    # print_top_trans(s_s_file_name, state_descs_str, state_topics)
 
-    # print_state_descs(s_t_file_name, t_w_file_name)
-    state_descs = get_state_descs(s_t_file_name, t_w_file_name, 20)
+    output_dir = sys.argv[1]
+    burn_iters = int(sys.argv[2])
+    lag_iters = int(sys.argv[3])
 
-    state_topics = get_state_topics(s_t_file_name, num=10)
+    # generate modal mean state trans counts
+    state_state_trans = np.mean(get_output_vals(os.path.join(output_dir, 'trans.tsv'),
+                                                burn_iters, lag_iters, np.double), axis=0)
 
 
-    # print state_descs
 
-    state_descs_str = [ [(w, float("{:.4f}".format(f))) for w, f in sd] for sd in state_descs]
-
-    # for i, words in enumerate(state_descs):
-    #     print i, ["{}({:.4f})".format(w, f) for w, f in words], "\n"
-
-    print_top_trans(s_s_file_name, state_descs_str, state_topics)
 
