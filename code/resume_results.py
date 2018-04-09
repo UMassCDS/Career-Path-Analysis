@@ -20,10 +20,10 @@ def inspect_output(infile_name, shape_iter_idx=0, delim="\t"):
         # shape = output_array.shape
         shape = None
         count = 0
-        for idx, _ in enumerate(infile):
+        for idx, line in enumerate(infile):
             count += 1
             if idx == shape_iter_idx:
-                ts, i, json_str = infile.readline().rstrip("\n").split(delim)
+                ts, i, json_str = line.rstrip("\n").split(delim)
                 output_array = np.array(json.loads(json_str), np.double)
                 shape = output_array.shape
         logging.debug("output shape: {}, {} iters".format(shape, count))
