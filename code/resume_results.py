@@ -4,7 +4,7 @@ import numpy as np
 # import seaborn as sns
 import logging
 import os.path
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from resume_lda import read_topic_word_distribs
 
 
