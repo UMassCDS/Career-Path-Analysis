@@ -1,7 +1,7 @@
 import sys
 import json
 import numpy as np
-import seaborn as sns
+# import seaborn as sns
 import logging
 import os.path
 import matplotlib.pyplot as plt
@@ -9,7 +9,7 @@ from resume_lda import read_topic_word_distribs
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
-sns.set(color_codes=True)
+# sns.set(color_codes=True)
 
 
 
