@@ -54,8 +54,11 @@ def get_output_vals(infile_name, burn=0, lag=0, dtype=np.double, delim="\t"):
                 ts, i, json_str = line.rstrip("\n").split(delim)
                 iters.append(json.loads(json_str))
 
-        logging.debug("got {} iters of output".format(len(iters)))
-        return np.array(iters, dtype)
+    logging.debug("got {} iters of output".format(len(iters)))
+    for i in range(5):
+        logging.debug("iter {}: {}".format(i, iters[i]))
+        
+    return np.array(iters, dtype)
 
 
 # print the average topic mix for each state
