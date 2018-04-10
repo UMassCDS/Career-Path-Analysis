@@ -22,6 +22,7 @@ def get_resumes_lda(infile_name):
 def get_resumes_db(conn):
     curs = conn.cursor()
     sql = "SELECT job_id, resume_id, start_dt, end_dt, description FROM jobs ORDER BY job_id"
+    logging.debug(sql)
     curs.execute(sql)
 
     rec = curs.fetchone()
@@ -38,28 +39,47 @@ def get_resumes_db(conn):
             yield resume_ret
 
 
+def dump_res_lda(res):
+    for j, job in enumerate(res):
+        logging.debug("res lda ({}/{}): {}".format(j, len(res)-1, job)[:150])
+
+
+def dump_res_db(res):
+    for j, job in enumerate(res):
+        logging.debug("res db  ({}/{}): {}".format(j, len(res)-1, job)[:150])
+
+
 def marry_lda_db(conn):
     logging.info("loading lda resumes")
     # res_ldas = resume_lda.load_json_resumes_lda(LDA_FILE, min_len=0)
     res_dbs = get_resumes_db(conn)
 
     # for res_lda in res_ldas:
-    for res_lda in get_resumes_lda(LDA_FILE):
-        for j, job in enumerate(res_lda):
-            logging.debug("res lda ({}/{}): {}".format(j, len(res_lda)-1, job)[:200])
+    for r, res_lda in enumerate(get_resumes_lda(LDA_FILE)):
+        if r % 1000 == 0:
+            logging.debug("\t{}".format(r))
 
         res_db = res_dbs.next()
-        for j, job in enumerate(res_db):
-            logging.debug("res db  ({}/{}): {}".format(j, len(res_db)-1, job)[:200])
 
         if len(res_lda) == len(res_db):
-            for job_lda, job_db in zip(res_lda, res_db):
-                logging.debug("job lda: {}".format(job_lda)[:200])
-                logging.debug("job db:  {}".format(job_db)[:200])
-        else:
-            logging.debug("BAD LENGTH MATCH!")
+            for lda_job, db_job in zip(res_lda, res_db):
+                lda_res_ent, lda_output = lda_job
+                lda_start, lda_end, lda_company, lda_desc = lda_res_ent
+                db_job_id, db_resume_id, db_start, db_end, db_desc = db_job
 
-    logging.debug("\n")
+                if (lda_start == db_start) and (lda_end == db_end):
+                    print json.dumps((db_job_id, lda_desc, lda_output))[:150]
+
+                else:
+                    logging.debug("BAD JOB MATCH")
+                    logging.debug("job lda: {}".format(lda_job)[:150])
+                    logging.debug("job db:  {}".format(db_job)[:150])
+        else:
+            logging.debug("BAD LENGTH MATCH")
+            logging.debug(dump_res_lda(res_lda))
+            logging.debug(dump_res_db(res_db))
+
+        logging.debug("\n")
 
 
 
