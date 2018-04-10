@@ -99,6 +99,8 @@ def get_job_id_hash(resumes):
             logging.debug("\n")
             logging.debug("resume key for {}: {}\n".format(resume[0][1], key))
 
+    logging.debug("hashed {} keys, {} collisions".format(len(date_key__id), collisions))
+
 
     return date_key__id
 
