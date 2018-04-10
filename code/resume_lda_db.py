@@ -154,6 +154,18 @@ def length_distrib(lists, max_len=20):
     return length_counts
 
 
+def create_lda_table(conn, num_topics, overwrite=False):
+    table_name = "lda_" + str(num_topics)
+    curs = conn.cursor()
+    if overwrite:
+        curs.execute("DROP TABLE IF EXISTS " + table_name)
+    sql = "CREATE TABLE " + table_name + " ("
+    sql += "job_id INTEGER PRIMARY KEY"
+    for i in range(num_topics):
+        sql += ", t{} FLOAT".format(i)
+    sql += ")"
+    curs.execute(sql)
+
 
 ########################################################
 if __name__ == '__main__':
@@ -179,16 +191,31 @@ if __name__ == '__main__':
     res_dbs = get_resumes_db(conn)
     job_id_hash = get_job_id_hash(res_dbs)
 
+
+    logging.debug("creating lda table")
+    create_lda_table(conn, 200, overwrite=True)
+
     logging.debug("matching lda resumes to db hash")
     hits = 0
     misses = 0
+    curs = conn.cursor()
     for r, res_lda in enumerate(get_resumes_lda(LDA_FILE)):
-        if r % 10000 == 0:
+        if r % 1000 == 0:
             logging.debug("\t{}\t({} hits, {} misses)".format(r, hits, misses))
 
         key = make_resume_date_key_lda(res_lda)
         if key in job_id_hash:
             hits += 1
+
+            # assumes we have a table built
+            job_ids = job_id_hash[key]
+            lda_vecs = [job[1] for job in res_lda]
+            insert_vals = [ tuple([jid] + vec) for jid, vec in zip(job_ids, lda_vecs) ]
+            topic_count = len(lda_vecs[0])
+            sql = "INSERT INTO lda_" + str(topic_count)
+            sql += " VALUES(%s" + ", %s"*topic_count + ")"
+            curs.executemany(sql, insert_vals)
+
         else:
             misses += 1
 
@@ -199,3 +226,6 @@ if __name__ == '__main__':
             #     break
 
     logging.debug("\t({} hits, {} misses)".format(hits, misses))
+    conn.commit()
+
+    
