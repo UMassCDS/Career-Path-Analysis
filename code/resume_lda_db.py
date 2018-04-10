@@ -232,6 +232,7 @@ if __name__ == '__main__':
                     logging.debug("insert error for job_id {}: {}".format(tup[0], err))
                     insert_errs += 1
                     continue
+                conn.commit()
 
 
         else:
