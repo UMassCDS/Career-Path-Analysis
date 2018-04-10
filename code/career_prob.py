@@ -30,7 +30,7 @@ def trans_prob(state, state_next, state_state_trans):
 resume_results.inspect_output(STATE_FILE, shape_iter_idx=15000)
 
 logging.debug("aggreg doc states")
-doc_states = scipy.stats.mode(resume_results.get_output_vals(STATE_FILE, BURN, LAG, np.integer),
+doc_states, _ = scipy.stats.mode(resume_results.get_output_vals(STATE_FILE, BURN, LAG, np.integer),
                               axis=0)
 logging.debug("doc states {}".format(doc_states.shape))
 
