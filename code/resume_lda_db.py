@@ -74,7 +74,7 @@ def dump_res_db(res):
         logging.debug("res db  ({}/{}): {}".format(j, len(res)-1, job)[:150])
 
 
-WATCH_RESUMES = {96796804, 119049}
+WATCH_RESUMES = {119049, 204269}
 
 def get_job_id_hash(resumes):
     date_key__id = {}
@@ -192,6 +192,7 @@ if __name__ == '__main__':
 
             logging.debug("hash miss {}: {}".format(misses, key))
             logging.debug("hash miss {}: {}\n".format(misses, res_lda[0])[:150])
+            logging.debug(" ")
 
-            if misses > 100:
+            if misses > 10:
                 break
