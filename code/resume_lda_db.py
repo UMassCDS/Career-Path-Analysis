@@ -1,6 +1,7 @@
 import argparse
 import logging
 import json
+import psycopg2
 import resume_common
 import resume_import
 import resume_lda
@@ -198,6 +199,7 @@ if __name__ == '__main__':
     logging.debug("matching lda resumes to db hash")
     hits = 0
     misses = 0
+    insert_errs = 0
     curs = conn.cursor()
     for r, res_lda in enumerate(get_resumes_lda(LDA_FILE)):
         if r % 1000 == 0:
@@ -215,7 +217,12 @@ if __name__ == '__main__':
             topic_count = len(lda_vecs[0])
             sql = "INSERT INTO lda_" + str(topic_count)
             sql += " VALUES(%s" + ", %s"*topic_count + ")"
-            curs.executemany(sql, insert_vals)
+
+            try:
+                curs.executemany(sql, insert_vals)
+            except psycopg2.IntegrityError as err:
+                logging.debug("insert error: {}".format(err))
+                insert_errs += 1
 
         else:
             misses += 1
@@ -226,6 +233,6 @@ if __name__ == '__main__':
             # if misses > 10:
             #     break
 
-    logging.debug("\t({} hits, {} misses)".format(hits, misses))
+    logging.debug("\t({} hits, {} misses, {} insert errs)".format(hits, misses, insert_errs))
     conn.commit()
 
