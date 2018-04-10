@@ -203,7 +203,7 @@ if __name__ == '__main__':
     curs = conn.cursor()
     for r, res_lda in enumerate(get_resumes_lda(LDA_FILE)):
         if r % 1000 == 0:
-            logging.debug("\t{}\t({} hits, {} misses)".format(r, hits, misses))
+            logging.debug("\t{}\t({} hits, {} misses, {} errs)".format(r, hits, misses, insert_errs))
             conn.commit()
 
         key = make_resume_date_key_lda(res_lda)
@@ -218,11 +218,19 @@ if __name__ == '__main__':
             sql = "INSERT INTO lda_" + str(topic_count)
             sql += " VALUES(%s" + ", %s"*topic_count + ")"
 
-            try:
-                curs.executemany(sql, insert_vals)
-            except psycopg2.IntegrityError as err:
-                logging.debug("insert error: {}".format(err))
-                insert_errs += 1
+            # try:
+            #     curs.executemany(sql, insert_vals)
+            # except psycopg2.IntegrityError as err:
+            #     logging.debug("insert error: {}".format(err))
+            #     insert_errs += 1
+            for tup in insert_vals:
+                try:
+                    curs.execute(sql, tup)
+                except psycopg2.IntegrityError as err:
+                    logging.debug("insert error for job_id {}: {}".format(tup[0], err))
+                    insert_errs += 1
+                    continue
+                
 
         else:
             misses += 1
