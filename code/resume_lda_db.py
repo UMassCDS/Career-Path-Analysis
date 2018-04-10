@@ -38,6 +38,7 @@ def get_resumes_db(conn):
             resume_curr = [rec]
             resume_id_prev = resume_id_curr
             yield resume_ret
+    yield resume_curr
 
 
 def make_resume_date_key_lda(resume):
