@@ -90,6 +90,13 @@ def get_job_id_hash(resumes):
             collisions += 1
         else:
             date_key__id[key] = job_ids
+
+        #zzz
+        if resume[0][1] in {96796804}:
+            logging.debug("\n")
+            logging.debug("resume key for {}: {}".format(resume[0][1], key))
+
+
     return date_key__id
 
 
@@ -180,4 +187,4 @@ if __name__ == '__main__':
         else:
             misses += 1
             logging.debug("hash miss {}: {}".format(misses, key))
-            logging.debug("hash miss {}: {}".format(misses, res_lda))
+            logging.debug("hash miss {}: {}\n".format(misses, res_lda))
