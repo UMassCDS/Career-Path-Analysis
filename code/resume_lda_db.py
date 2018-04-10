@@ -219,20 +219,23 @@ if __name__ == '__main__':
             sql = "INSERT INTO lda_" + str(topic_count)
             sql += " VALUES(%s" + ", %s"*topic_count + ")"
 
-            # try:
-            #     curs.executemany(sql, insert_vals)
-            # except psycopg2.IntegrityError as err:
-            #     logging.debug("insert error: {}".format(err))
-            #     insert_errs += 1
-            for tup in insert_vals:
-                try:
-                    curs.execute(sql, tup)
-                # except psycopg2.IntegrityError as err:
-                except Exception as err:
-                    logging.debug("insert error for job_id {}: {}".format(tup[0], err))
-                    insert_errs += 1
-                    continue
-                conn.commit()
+            try:
+                curs.executemany(sql, insert_vals)
+            except psycopg2.IntegrityError as err:
+                logging.debug("insert error: {}".format(err))
+                insert_errs += 1
+
+            del job_id_hash[key]
+
+            # for tup in insert_vals:
+            #     try:
+            #         curs.execute(sql, tup)
+            #     # except psycopg2.IntegrityError as err:
+            #     except Exception as err:
+            #         logging.debug("insert error for job_id {}: {}".format(tup[0], err))
+            #         insert_errs += 1
+            #         continue
+            #     conn.commit()
 
 
         else:
