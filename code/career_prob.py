@@ -37,7 +37,7 @@ def create_trans_prob_table(conn, overwrite=False):
     curs = conn.cursor()
     if overwrite:
         curs.execute("DROP TABLE IF EXISTS " + table_name)
-    sql = "CREATE TABLE " + table_name + " (job_id1 INTEGER, job_id2 INTEGER, trans_prob FLOAT)"
+    sql = "CREATE TABLE " + table_name + " (job_id1 INTEGER, job_id2 INTEGER, job_state1 INTEGER, job_state2 INTEGER, trans_prob FLOAT)"
     curs.execute(sql)
 
 
@@ -105,8 +105,8 @@ for r, resume in enumerate(resumes):
         for i in range(1, len(job_states)):
             prob = trans_prob(job_states[i-1], job_states[i], state_state_trans)
             # trans_product *= prob
-            tup = (job_ids[i-1], job_ids[i], prob)
-            curs.execute("INSERT INTO " + TRANS_PROB_TABLE + " VALUES(%s, %s, %s)", tup)
+            tup = (job_ids[i-1], job_ids[i], job_states[i-1], job_states[i], prob)
+            curs.execute("INSERT INTO " + TRANS_PROB_TABLE + " VALUES(%s, %s, %s, %s, %s)", tup)
 
     else:
         misses += 1
