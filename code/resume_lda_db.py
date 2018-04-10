@@ -49,7 +49,7 @@ def marry_lda_db(conn):
             logging.debug("res lda ({}/{}): {}".format(j, len(res_lda)-1, job)[:200])
 
         res_db = res_dbs.next()
-        for j, job in enumerate(res_lda):
+        for j, job in enumerate(res_db):
             logging.debug("res db  ({}/{}): {}".format(j, len(res_db)-1, job)[:200])
 
         if len(res_lda) == len(res_db):
