@@ -195,6 +195,7 @@ if __name__ == '__main__':
 
     logging.debug("creating lda table")
     create_lda_table(conn, 200, overwrite=True)
+    conn.commit()
 
     logging.debug("matching lda resumes to db hash")
     hits = 0
@@ -226,11 +227,12 @@ if __name__ == '__main__':
             for tup in insert_vals:
                 try:
                     curs.execute(sql, tup)
-                except psycopg2.IntegrityError as err:
+                # except psycopg2.IntegrityError as err:
+                except Exception as err:
                     logging.debug("insert error for job_id {}: {}".format(tup[0], err))
                     insert_errs += 1
                     continue
-                
+
 
         else:
             misses += 1
