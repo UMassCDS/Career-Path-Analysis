@@ -1,5 +1,7 @@
 import argparse
 import logging
+import json
+import resume_common
 import resume_lda
 import resume_import_db as impdb
 
@@ -10,9 +12,16 @@ LDA_FILE = '/data/output/output_all_200/resumes_all_lda200.json'
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
+def get_resumes_lda(infile_name):
+    with open(infile_name, 'r') as infile:
+        for json_line in infile:
+            res = json.loads(json_line.rstrip("\n"))
+            yield [ (resume_common.detuplify(e), lda) for e, lda in res ]
+
+
 def get_resumes_db(conn):
     curs = conn.cursor()
-    sql = "SELECT job_id, resume_id, start_dt, end_dt, desc FROM jobs ORDER BY job_id"
+    sql = "SELECT job_id, resume_id, start_dt, end_dt, description FROM jobs ORDER BY job_id"
     curs.execute(sql)
 
     rec = curs.fetchone()
@@ -31,10 +40,11 @@ def get_resumes_db(conn):
 
 def marry_lda_db(conn):
     logging.info("loading lda resumes")
-    res_ldas = resume_lda.load_json_resumes_lda(LDA_FILE, min_len=0)
+    # res_ldas = resume_lda.load_json_resumes_lda(LDA_FILE, min_len=0)
     res_dbs = get_resumes_db(conn)
 
-    for res_lda in res_ldas:
+    # for res_lda in res_ldas:
+    for res_lda in get_resumes_lda(LDA_FILE):
         logging.debug("res lda ({}): {}".format(len(res_lda), res_lda))
 
         res_db = res_dbs.next()
