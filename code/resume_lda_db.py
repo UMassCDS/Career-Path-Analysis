@@ -45,15 +45,17 @@ def marry_lda_db(conn):
 
     # for res_lda in res_ldas:
     for res_lda in get_resumes_lda(LDA_FILE):
-        logging.debug("res lda ({}): {}".format(len(res_lda), res_lda))
+        for j, job in enumerate(res_lda):
+            logging.debug("res lda ({}/{}): {}".format(j, len(res_lda)-1, job)[:200])
 
         res_db = res_dbs.next()
-        logging.debug("res db  ({}): {}".format(len(res_db), res_db))
+        for j, job in enumerate(res_lda):
+            logging.debug("res db  ({}/{}): {}".format(j, len(res_db)-1, job)[:200])
 
         if len(res_lda) == len(res_db):
             for job_lda, job_db in zip(res_lda, res_db):
-                logging.debug("job lda: {}".format(job_lda))
-                logging.debug("job db:  {}".format(job_db))
+                logging.debug("job lda: {}".format(job_lda)[:200])
+                logging.debug("job db:  {}".format(job_db)[:200])
         else:
             logging.debug("BAD LENGTH MATCH!")
 
