@@ -56,6 +56,7 @@ def marry_lda_db(conn):
 
     # for res_lda in res_ldas:
     for r, res_lda in enumerate(get_resumes_lda(LDA_FILE)):
+
         if r % 1000 == 0:
             logging.debug("\t{}".format(r))
 
@@ -71,15 +72,15 @@ def marry_lda_db(conn):
                     print json.dumps((db_job_id, lda_desc, lda_output))[:150]
 
                 else:
-                    logging.debug("BAD JOB MATCH")
-                    logging.debug("job lda: {}".format(lda_job)[:150])
-                    logging.debug("job db:  {}".format(db_job)[:150])
+                    logging.debug("BAD JOB MATCH res {}".format(r))
+                    logging.debug("job lda: {}".format(lda_job)[:300])
+                    logging.debug("job db:  {}".format(db_job)[:300])
                     logging.debug("\n")
-                    
+
         else:
-            logging.debug("BAD LENGTH MATCH")
-            logging.debug(dump_res_lda(res_lda))
-            logging.debug(dump_res_db(res_db))
+            logging.debug("BAD LENGTH MATCH res {}".format(r))
+            dump_res_lda(res_lda)
+            dump_res_db(res_db)
             logging.debug("\n")
 
         # logging.debug("\n")
