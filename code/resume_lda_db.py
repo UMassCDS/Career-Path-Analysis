@@ -179,3 +179,5 @@ if __name__ == '__main__':
             hits += 1
         else:
             misses += 1
+            logging.debug("hash miss {}: {}".format(misses, key))
+            logging.debug("hash miss {}: {}".format(misses, res_lda))
