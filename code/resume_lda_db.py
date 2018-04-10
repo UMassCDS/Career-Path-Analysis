@@ -71,6 +71,7 @@ def get_job_id_hash(resumes):
         job_ids = [ job[0] for job in resume ]
         key = make_resume_date_key_db(resume)
         if key in date_key__id:
+            logging.debug("COLLISION {}: {}".format(collisions, key))
             logging.debug("COLLISION {} (new):   {}".format(collisions, resume))
             logging.debug("COLLISION {} (exist): {}\n".format(collisions, date_key__id[key]))
             collisions += 1
