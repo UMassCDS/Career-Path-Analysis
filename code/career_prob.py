@@ -32,6 +32,7 @@ resume_results.inspect_output(STATE_FILE, shape_iter_idx=15000)
 logging.debug("aggreg doc states")
 doc_states, _ = scipy.stats.mode(resume_results.get_output_vals(STATE_FILE, BURN, LAG, np.integer),
                               axis=0)
+doc_states = doc_states[0]
 logging.debug("doc states {}".format(doc_states.shape))
 
 logging.debug("aggreg state trans")
