@@ -13,7 +13,7 @@ STATE_FILE = '/data/output/hmm_topics200_states500_iters10k_docs30k/states.tsv'
 LDA_FILE = '/data/output/output_all_200/resumes_all_lda200.json'
 
 BURN = 1000
-LAG = 10
+LAG = 100
 MIN_RESUME_LEN = 3
 MAX_ENTRIES = 30000
 
@@ -26,6 +26,8 @@ def trans_prob(state, state_next, state_state_trans):
     sum_n_ik = sum([state_state_trans[state, k] for k in range(num_states)])
     return float(n_ij) / sum_n_ik
 
+
+resume_results.inspect_output(STATE_FILE)
 
 logging.debug("aggreg doc states")
 doc_states = scipy.stats.mode(resume_results.get_output_vals(STATE_FILE, BURN, LAG, np.integer),
