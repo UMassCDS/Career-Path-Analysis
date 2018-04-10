@@ -62,3 +62,6 @@ if __name__ == '__main__':
 
     logging.info("connecting to db")
     conn = impdb.get_connection(args.host, args.db, args.user)
+
+    logging.info("marrying")
+    marry_lda_db(conn)
