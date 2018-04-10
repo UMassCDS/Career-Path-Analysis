@@ -51,7 +51,7 @@ def make_resume_date_key_lda(resume):
         else:
             company = comp_loc
             loc = ''
-        job_tups.append((job[0][0], job[0][1], company, loc))
+        job_tups.append((job[0][0], job[0][1], str(company), str(loc)))
 
     return tuple(sorted(job_tups))
 
