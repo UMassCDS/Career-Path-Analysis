@@ -39,6 +39,16 @@ def get_resumes_db(conn):
             yield resume_ret
 
 
+def make_resume_date_key_lda(resume):
+    start_end_pairs = [ (job[0][0], job[0][1]) for job in resume ]
+    return tuple(sorted(start_end_pairs))
+
+
+def make_resume_date_key_db(resume):
+    start_end_pairs = [(job[2], job[3]) for job in resume]
+    return tuple(sorted(start_end_pairs))
+
+
 def dump_res_lda(res):
     for j, job in enumerate(res):
         logging.debug("res lda ({}/{}): {}".format(j, len(res)-1, job)[:150])
@@ -47,6 +57,25 @@ def dump_res_lda(res):
 def dump_res_db(res):
     for j, job in enumerate(res):
         logging.debug("res db  ({}/{}): {}".format(j, len(res)-1, job)[:150])
+
+
+def get_job_id_hash(resumes):
+    date_key__id = {}
+    collisions = 0
+    logging.debug("creating job id hash from db")
+    for r, resume in enumerate(resumes):
+        if r % 50000 == 0:
+            logging.debug("\t{}".format(r))
+
+        job_ids = [ job[0] for job in resume ]
+        key = make_resume_date_key_db(resume)
+        if key in date_key__id:
+            logging.debug("COLLISION {} (new):   {}".format(collisions, resume))
+            logging.debug("COLLISION {} (exist): {}\n".format(collisions, date_key__id[key]))
+            collisions += 1
+        else:
+            date_key__id[key] = job_ids
+    return date_key__id
 
 
 def marry_lda_db(conn):
@@ -111,11 +140,27 @@ if __name__ == '__main__':
     logging.info("connecting to db")
     conn = impdb.get_connection(args.host, args.db, args.user)
 
-    logging.debug("lda lengths:")
-    length_distrib(get_resumes_lda(LDA_FILE), 20)
-
-    logging.debug("db lengths:")
-    length_distrib(get_resumes_db(conn), 20)
+    # logging.debug("lda lengths:")
+    # length_distrib(get_resumes_lda(LDA_FILE), 20)
+    #
+    # logging.debug("db lengths:")
+    # length_distrib(get_resumes_db(conn), 20)
 
     # logging.info("marrying")
     # marry_lda_db(conn)
+
+    res_dbs = get_resumes_db(conn)
+    job_id_hash = get_job_id_hash(res_dbs)
+
+    logging.debug("matching lda resumes to db hash")
+    hits = 0
+    misses = 0
+    for r, res_lda in enumerate(get_resumes_lda(LDA_FILE)):
+        if r % 10000 == 0:
+            logging.debug("\t{}\t({} hits, {} misses)".format(r, hits, misses))
+
+        key = make_resume_date_key_lda(res_lda)
+        if key in job_id_hash:
+            hits += 1
+        else:
+            misses += 1
