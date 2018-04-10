@@ -12,7 +12,6 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(mes
 # sns.set(color_codes=True)
 
 
-
 def inspect_output(infile_name, shape_iter_idx=0, delim="\t"):
     with open(infile_name, 'r') as infile:
         # ts, i, json_str = infile.readline().rstrip("\n").split(delim)
@@ -228,6 +227,7 @@ if __name__ == '__main__':
     # generate modal mean state trans counts
     state_state_trans = np.mean(get_output_vals(os.path.join(output_dir, 'trans.tsv'),
                                                 burn_iters, lag_iters, np.double), axis=0)
+
 
 
 
