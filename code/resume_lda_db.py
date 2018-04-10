@@ -74,12 +74,15 @@ def marry_lda_db(conn):
                     logging.debug("BAD JOB MATCH")
                     logging.debug("job lda: {}".format(lda_job)[:150])
                     logging.debug("job db:  {}".format(db_job)[:150])
+                    logging.debug("\n")
+                    
         else:
             logging.debug("BAD LENGTH MATCH")
             logging.debug(dump_res_lda(res_lda))
             logging.debug(dump_res_db(res_db))
+            logging.debug("\n")
 
-        logging.debug("\n")
+        # logging.debug("\n")
 
 
 
