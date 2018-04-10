@@ -86,6 +86,7 @@ def get_job_id_hash(resumes):
             logging.debug("\t{}".format(r))
 
         job_ids = [ job[0] for job in resume ]
+        resume_id = resume[0][1]
         key = make_resume_date_key_db(resume)
         if key in date_key__id:
             # logging.debug("COLLISION {}: {}".format(collisions, key))
@@ -93,7 +94,7 @@ def get_job_id_hash(resumes):
             # logging.debug("COLLISION {} (exist): {}\n".format(collisions, date_key__id[key]))
             collisions += 1
         else:
-            date_key__id[key] = job_ids
+            date_key__id[key] = resume_id, job_ids
 
         #zzz
         if resume[0][1] in WATCH_RESUMES:
@@ -168,6 +169,7 @@ def create_lda_table(conn, num_topics, overwrite=False):
     curs.execute(sql)
 
 
+
 ########################################################
 if __name__ == '__main__':
 
@@ -212,7 +214,7 @@ if __name__ == '__main__':
             hits += 1
 
             # assumes we have a table built
-            job_ids = job_id_hash[key]
+            _, job_ids = job_id_hash[key]
             lda_vecs = [job[1] for job in res_lda]
             insert_vals = [ tuple([jid] + vec) for jid, vec in zip(job_ids, lda_vecs) ]
             topic_count = len(lda_vecs[0])
