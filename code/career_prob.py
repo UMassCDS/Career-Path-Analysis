@@ -27,7 +27,7 @@ def trans_prob(state, state_next, state_state_trans):
     return float(n_ij) / sum_n_ik
 
 
-resume_results.inspect_output(STATE_FILE)
+resume_results.inspect_output(STATE_FILE, shape_iter_idx=15000)
 
 logging.debug("aggreg doc states")
 doc_states = scipy.stats.mode(resume_results.get_output_vals(STATE_FILE, BURN, LAG, np.integer),
