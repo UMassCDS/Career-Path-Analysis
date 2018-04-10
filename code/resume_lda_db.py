@@ -73,6 +73,8 @@ def dump_res_db(res):
         logging.debug("res db  ({}/{}): {}".format(j, len(res)-1, job)[:150])
 
 
+WATCH_RESUMES = {96796804}
+
 def get_job_id_hash(resumes):
     date_key__id = {}
     collisions = 0
@@ -84,15 +86,15 @@ def get_job_id_hash(resumes):
         job_ids = [ job[0] for job in resume ]
         key = make_resume_date_key_db(resume)
         if key in date_key__id:
-            logging.debug("COLLISION {}: {}".format(collisions, key))
-            logging.debug("COLLISION {} (new):   {}".format(collisions, resume))
-            logging.debug("COLLISION {} (exist): {}\n".format(collisions, date_key__id[key]))
+            # logging.debug("COLLISION {}: {}".format(collisions, key))
+            # logging.debug("COLLISION {} (new):   {}".format(collisions, resume))
+            # logging.debug("COLLISION {} (exist): {}\n".format(collisions, date_key__id[key]))
             collisions += 1
         else:
             date_key__id[key] = job_ids
 
         #zzz
-        if resume[0][1] in {96796804}:
+        if resume[0][1] in WATCH_RESUMES:
             logging.debug("\n")
             logging.debug("resume key for {}: {}".format(resume[0][1], key))
 
@@ -186,5 +188,6 @@ if __name__ == '__main__':
             hits += 1
         else:
             misses += 1
+
             logging.debug("hash miss {}: {}".format(misses, key))
-            logging.debug("hash miss {}: {}\n".format(misses, res_lda))
+            logging.debug("hash miss {}: {}\n".format(misses, res_lda[0])[:150])
