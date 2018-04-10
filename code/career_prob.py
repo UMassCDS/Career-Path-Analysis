@@ -44,9 +44,9 @@ job_idx = 0
 for r, resume in enumerate(resumes):
     job_states = []
     job_companies = []
-    for i, resume in enumerate(resumes):
-        logging.debug("{}".format(resume))
-        res_ent, top_dis = resume
+    for i, job in enumerate(resume):
+        # logging.debug("{}".format(resume))
+        res_ent, top_dis = job
         start, end, company, desc = res_ent
         job_state = doc_states[job_idx]
         job_states.append(job_state)
