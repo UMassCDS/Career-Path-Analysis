@@ -44,6 +44,7 @@ logging.debug("loading resumes")
 resumes = resume_lda.load_json_resumes_lda(LDA_FILE,
                                            min_len=MIN_RESUME_LEN, max_entries=MAX_ENTRIES)
 
+res_tups = []
 job_idx = 0
 
 for r, resume in enumerate(resumes):
@@ -53,7 +54,7 @@ for r, resume in enumerate(resumes):
         # logging.debug("{}".format(resume))
         res_ent, top_dis = job
         start, end, company, desc = res_ent
-        logging.debug("res {} job {}: {}".format(r, i, company))
+        logging.debug("res {} job {}: {}".format(r, job_idx, company))
         job_state = doc_states[job_idx]
         job_states.append(job_state)
         job_companies.append(company)
@@ -64,6 +65,9 @@ for r, resume in enumerate(resumes):
         trans_product *= trans_prob(job_states[i-1], job_states[i], state_state_trans)
     logging.debug("{}\t{}\t{}\n".format(" => ".join(job_companies), len(job_states), trans_product))
 
+    res_tups.append((len(job_states), trans_product, job_companies))
 
-
+res_tups.sort()
+for num_jobs, prob, companies in res_tups:
+    logging.debug("{}\t{}\t{}\n".format(num_jobs, trans_product, " => ".join(companies)))
 
