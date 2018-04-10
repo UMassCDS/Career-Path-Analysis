@@ -202,6 +202,7 @@ if __name__ == '__main__':
     for r, res_lda in enumerate(get_resumes_lda(LDA_FILE)):
         if r % 1000 == 0:
             logging.debug("\t{}\t({} hits, {} misses)".format(r, hits, misses))
+            conn.commit()
 
         key = make_resume_date_key_lda(res_lda)
         if key in job_id_hash:
@@ -228,4 +229,3 @@ if __name__ == '__main__':
     logging.debug("\t({} hits, {} misses)".format(hits, misses))
     conn.commit()
 
-    
