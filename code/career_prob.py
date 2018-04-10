@@ -75,13 +75,16 @@ res_tups = []
 job_idx = 0
 
 curs = conn.cursor()
+hits = 0
+misses = 0
 for r, resume in enumerate(resumes):
     if r % 1000 == 0:
-        logging.debug("\t{}".format(r))
+        logging.debug("\t{}/{} ({} hits, {} misses)".format(r, len(resumes)-1, hits, misses))
         conn.commit()
 
     res_key = ldadb.make_resume_date_key_lda(resume)
     if res_key in job_id_hash:
+        hits += 1
 
         resume_id, job_ids = job_id_hash[res_key]
         job_states = []
@@ -105,6 +108,8 @@ for r, resume in enumerate(resumes):
             tup = (job_ids[i-1], job_ids[i], prob)
             curs.execute("INSERT INTO " + TRANS_PROB_TABLE + " VALUES(%s, %s, %s)", tup)
 
+    else:
+        misses += 1
 
 
         # logging.debug("{}\t{}\t{}\n".format(" => ".join(job_companies), len(job_states), trans_product))
