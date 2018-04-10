@@ -190,9 +190,10 @@ if __name__ == '__main__':
         else:
             misses += 1
 
-            logging.debug("hash miss {}: {}".format(misses, key))
-            logging.debug("hash miss {}: {}\n".format(misses, res_lda[0])[:150])
-            logging.debug(" ")
+            # logging.debug("hash miss {}: {}".format(misses, key))
+            # logging.debug("hash miss {}: {}\n".format(misses, res_lda[0])[:150])
+            # logging.debug(" ")
+            # if misses > 10:
+            #     break
 
-            if misses > 10:
-                break
+    logging.debug("\t({} hits, {} misses)".format(hits, misses))
