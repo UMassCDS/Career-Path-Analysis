@@ -13,7 +13,7 @@ STATE_FILE = '/data/output/hmm_topics200_states500_iters10k_docs30k/states.tsv'
 LDA_FILE = '/data/output/output_all_200/resumes_all_lda200.json'
 
 BURN = 1000
-LAG = 100
+LAG = 10
 MIN_RESUME_LEN = 3
 MAX_ENTRIES = 30000
 
@@ -44,7 +44,9 @@ job_idx = 0
 for r, resume in enumerate(resumes):
     job_states = []
     job_companies = []
-    for i, (res_ent, top_dis) in enumerate(resumes):
+    for i, resume in enumerate(resumes):
+        logging.debug("{}".format(resume))
+        res_ent, top_dis = resumes
         start, end, company, desc = res_ent
         job_state = doc_states[job_idx]
         job_states.append(job_state)
