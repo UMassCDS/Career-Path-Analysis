@@ -22,7 +22,7 @@ def get_resumes_lda(infile_name):
 
 def get_resumes_db(conn):
     curs = conn.cursor()
-    sql = "SELECT job_id, resume_id, start_dt, end_dt, location, description FROM jobs ORDER BY job_id"
+    sql = "SELECT job_id, resume_id, start_dt, end_dt, company_name, description FROM jobs ORDER BY job_id"
     logging.debug(sql)
     curs.execute(sql)
 
