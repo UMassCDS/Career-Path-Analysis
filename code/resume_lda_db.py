@@ -50,7 +50,7 @@ def dump_res_db(res):
 
 
 def marry_lda_db(conn):
-    logging.info("loading lda resumes")
+    # logging.info("loading lda resumes")
     # res_ldas = resume_lda.load_json_resumes_lda(LDA_FILE, min_len=0)
     res_dbs = get_resumes_db(conn)
 
@@ -86,6 +86,18 @@ def marry_lda_db(conn):
         # logging.debug("\n")
 
 
+def length_distrib(lists, max_len=20):
+    length_counts = [0]*(max_len+1)
+    for i, lst in enumerate(lists):
+        if i % 100000 == 0:
+            logging.debug("\t{}".format(i))
+        length = min(len(lst), max_len)
+        length_counts[length] += 1
+    for j in range(len(length_counts)):
+        logging.debug("length {}:\t{}".format(j, length_counts[j]))
+    return length_counts
+
+
 
 ########################################################
 if __name__ == '__main__':
@@ -99,5 +111,11 @@ if __name__ == '__main__':
     logging.info("connecting to db")
     conn = impdb.get_connection(args.host, args.db, args.user)
 
-    logging.info("marrying")
-    marry_lda_db(conn)
+    logging.debug("lda lengths:")
+    length_distrib(get_resumes_lda(LDA_FILE), 20)
+
+    logging.debug("db lengths:")
+    length_distrib(get_resumes_db(conn), 20)
+
+    # logging.info("marrying")
+    # marry_lda_db(conn)
