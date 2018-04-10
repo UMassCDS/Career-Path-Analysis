@@ -2,6 +2,7 @@ import argparse
 import logging
 import json
 import resume_common
+import resume_import
 import resume_lda
 import resume_import_db as impdb
 
@@ -21,7 +22,7 @@ def get_resumes_lda(infile_name):
 
 def get_resumes_db(conn):
     curs = conn.cursor()
-    sql = "SELECT job_id, resume_id, start_dt, end_dt, description FROM jobs ORDER BY job_id"
+    sql = "SELECT job_id, resume_id, start_dt, end_dt, location, description FROM jobs ORDER BY job_id"
     logging.debug(sql)
     curs.execute(sql)
 
@@ -40,12 +41,12 @@ def get_resumes_db(conn):
 
 
 def make_resume_date_key_lda(resume):
-    start_end_pairs = [ (job[0][0], job[0][1]) for job in resume ]
+    start_end_pairs = [ (job[0][0], job[0][1], job[0][2].split(' (', 1)[0]) for job in resume ]
     return tuple(sorted(start_end_pairs))
 
 
 def make_resume_date_key_db(resume):
-    start_end_pairs = [(job[2], job[3]) for job in resume]
+    start_end_pairs = [(job[2], job[3], resume_import.clean_name(job[4])) for job in resume]
     return tuple(sorted(start_end_pairs))
 
 
@@ -95,7 +96,7 @@ def marry_lda_db(conn):
             for lda_job, db_job in zip(res_lda, res_db):
                 lda_res_ent, lda_output = lda_job
                 lda_start, lda_end, lda_company, lda_desc = lda_res_ent
-                db_job_id, db_resume_id, db_start, db_end, db_desc = db_job
+                db_job_id, db_resume_id, db_start, db_end, db_company, db_desc = db_job
 
                 if (lda_start == db_start) and (lda_end == db_end):
                     print json.dumps((db_job_id, lda_desc, lda_output))[:150]
