@@ -204,34 +204,34 @@ def print_top_trans(state_state_file_name, state_descs, state_topics):
 ########################################################
 if __name__ == '__main__':
 
-    # s_t_file_name = sys.argv[1]
-    # t_w_file_name = sys.argv[2]
-    # s_s_file_name = sys.argv[3]
-    #
-    # # print_state_descs(s_t_file_name, t_w_file_name)
-    # state_descs = get_state_descs(s_t_file_name, t_w_file_name, 20)
-    #
-    # state_topics = get_state_topics(s_t_file_name, num=10)
-    #
-    #
-    # # print state_descs
-    #
-    # state_descs_str = [ [(w, float("{:.4f}".format(f))) for w, f in sd] for sd in state_descs]
-    #
-    # # for i, words in enumerate(state_descs):
-    # #     print i, ["{}({:.4f})".format(w, f) for w, f in words], "\n"
-    #
-    # print_top_trans(s_s_file_name, state_descs_str, state_topics)
+    s_t_file_name = sys.argv[1]
+    t_w_file_name = sys.argv[2]
+    s_s_file_name = sys.argv[3]
 
-    output_dir = sys.argv[1]
-    burn_iters = int(sys.argv[2])
-    lag_iters = int(sys.argv[3])
+    print_state_descs(s_t_file_name, t_w_file_name)
+    state_descs = get_state_descs(s_t_file_name, t_w_file_name, 20)
 
-    # generate modal mean state trans counts
-    state_state_trans = np.mean(get_output_vals(os.path.join(output_dir, 'trans.tsv'),
-                                                burn_iters, lag_iters, np.double), axis=0)
+    state_topics = get_state_topics(s_t_file_name, num=10)
 
 
+    # print state_descs
+
+    state_descs_str = [ [(w, float("{:.4f}".format(f))) for w, f in sd] for sd in state_descs]
+
+    # for i, words in enumerate(state_descs):
+    #     print i, ["{}({:.4f})".format(w, f) for w, f in words], "\n"
+
+    print_top_trans(s_s_file_name, state_descs_str, state_topics)
+
+    # output_dir = sys.argv[1]
+    # burn_iters = int(sys.argv[2])
+    # lag_iters = int(sys.argv[3])
+    #
+    # # generate modal mean state trans counts
+    # state_state_trans = np.mean(get_output_vals(os.path.join(output_dir, 'trans.tsv'),
+    #                                             burn_iters, lag_iters, np.double), axis=0)
+    #
+    #
 
 
 
