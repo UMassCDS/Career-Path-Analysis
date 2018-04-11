@@ -17,6 +17,7 @@ LDA_FILE = '/data/output/output_all_200/resumes_all_lda200.json'
 
 TRANS_PROB_TABLE = "job_transition_probs"
 
+GAMMA = 1.0
 BURN = 1000
 LAG = 10
 MIN_RESUME_LEN = 3
@@ -27,8 +28,8 @@ MAX_ENTRIES = 30000
 # MLE is: p_ij = n_ij / SUM[ n_ik ] for k=0 to num_states
 def trans_prob(state, state_next, state_state_trans):
     num_states = state_state_trans.shape[0]
-    n_ij = state_state_trans[state, state_next]
-    sum_n_ik = sum([state_state_trans[state, k] for k in range(num_states)])
+    n_ij = state_state_trans[state, state_next] + GAMMA
+    sum_n_ik = sum([state_state_trans[state, k] + GAMMA for k in range(num_states)])
     return float(n_ij) / sum_n_ik
 
 
